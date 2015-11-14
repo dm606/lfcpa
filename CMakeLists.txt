@@ -15,4 +15,4 @@ include_directories(${LLVM_INCLUDE_DIRS})
 add_definitions(${LLVM_DEFINITIONS})
 
 add_subdirectory(LFCPA)
-add_llvm_loadable_module(TestPass TestPass.cc)
+add_llvm_loadable_module(TestPass TestPass.cpp)
