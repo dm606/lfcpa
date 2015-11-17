@@ -9,7 +9,7 @@ flags = [
 '-Werror',
 '-fexceptions',
 '-DNDEBUG',
-'-std=c++14',
+'-std=c++11',
 '-x',
 'c++',
 '-isystem',
