@@ -14,5 +14,5 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11 -Wall")
 include_directories(${LLVM_INCLUDE_DIRS})
 add_definitions(${LLVM_DEFINITIONS})
 
-add_subdirectory(LFCPA)
-add_llvm_loadable_module(TestPass TestPass.cpp)
+include_directories(include)
+add_llvm_loadable_module(TestPass TestPass.cpp lib/LivenessPointsTo.cpp)
