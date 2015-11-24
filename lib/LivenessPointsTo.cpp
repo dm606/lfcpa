@@ -7,17 +7,21 @@
 #include "../include/PointsToNode.h"
 
 void LivenessPointsTo::runOnFunction(Function &F) {
-    DenseMap<BasicBlock*, SmallVector<std::pair<PointsToNode, PointsToNode>, 10>> ain, aout;
+    DenseMap<const BasicBlock *, SmallVector<std::pair<PointsToNode, PointsToNode>, 10>> ain, aout;
 
     for (auto &BB : F) {
-        BasicBlock *b = &BB;
+        const BasicBlock *b = &BB;
         SmallVector<std::pair<PointsToNode, PointsToNode>, 10> v;
-        std::pair<BasicBlock*, SmallVector<std::pair<PointsToNode, PointsToNode>, 10>> p = std::make_pair(b, v);
-        const std::pair<BasicBlock*, SmallVector<std::pair<PointsToNode, PointsToNode>, 10>> &KV = p;
+        std::pair<const BasicBlock *, SmallVector<std::pair<PointsToNode, PointsToNode>, 10>> p = std::make_pair(b, v);
+        const std::pair<const BasicBlock *, SmallVector<std::pair<PointsToNode, PointsToNode>, 10>> &KV = p;
         ain.insert(KV);
     }
 
     for (auto &KV : ain) {
         pointsto.insert(KV);
     }
+}
+
+SmallVector<std::pair<PointsToNode, PointsToNode>, 10> LivenessPointsTo::getPointsTo(BasicBlock &BB) {
+    return pointsto.find(&BB)->second;
 }

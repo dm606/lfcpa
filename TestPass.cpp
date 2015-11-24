@@ -21,8 +21,10 @@ struct TestPass : public FunctionPass {
         errs().write_escaped(F.getName()) << "\n";
         analysis.runOnFunction(F);
 
+        errs() << "Finished running analysis on function.\n";
+
         for (BasicBlock &BB : F) {
-            SmallVectorImpl<std::pair<PointsToNode, PointsToNode>>& sv = analysis.getPointsTo(BB);
+            auto sv = analysis.getPointsTo(BB);
             errs() << "Points-to information at BB " << BB.getName() << ": ";
             bool first = true;
             for (auto i : sv) {
@@ -34,6 +36,7 @@ struct TestPass : public FunctionPass {
                     errs() << ", " << 0;
                 }
             }
+            errs() << "\n";
         }
 
         return false;
