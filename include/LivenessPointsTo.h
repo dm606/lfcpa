@@ -12,9 +12,9 @@ using namespace llvm;
 class LivenessPointsTo {
 public:
     void runOnFunction (Function&);
-    SmallVector<std::pair<PointsToNode*, PointsToNode*>, 10>* getPointsTo (BasicBlock &) const;
+    SmallVector<std::pair<PointsToNode*, PointsToNode*>, 10>* getPointsTo (Instruction &) const;
 private:
-    DenseMap<const BasicBlock *, SmallVector<std::pair<PointsToNode*, PointsToNode*>, 10>*> pointsto;
+    DenseMap<const Instruction *, SmallVector<std::pair<PointsToNode*, PointsToNode*>, 10>*> pointsto;
     PointsToNodeFactory factory;
 };
 

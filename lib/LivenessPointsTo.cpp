@@ -7,21 +7,23 @@
 #include "../include/LivenessPointsTo.h"
 
 void LivenessPointsTo::runOnFunction(Function &F) {
-    DenseMap<const BasicBlock *, SmallVector<std::pair<PointsToNode*, PointsToNode*>, 10> *> ain, aout;
+    DenseMap<const Instruction *, SmallVector<std::pair<PointsToNode*, PointsToNode*>, 10> *> ain, aout;
 
     // Create vectors to store the points-to information in.
     for (auto &BB : F) {
-        ain.insert(std::make_pair(&BB, new SmallVector<std::pair<PointsToNode*, PointsToNode*>, 10>()));
-        aout.insert(std::make_pair(&BB, new SmallVector<std::pair<PointsToNode*, PointsToNode*>, 10>()));
+        for (auto &I : BB) {
+            ain.insert(std::make_pair(&I, new SmallVector<std::pair<PointsToNode*, PointsToNode*>, 10>()));
+            aout.insert(std::make_pair(&I, new SmallVector<std::pair<PointsToNode*, PointsToNode*>, 10>()));
+        }
     }
 
     for (auto &BB : F) {
-        auto block_in = ain.find(&BB)->second, block_out = aout.find(&BB)->second;
         Value *last = NULL;
         for (auto &I : BB) {
+            auto instruction_in = ain.find(&I)->second, instruction_out = aout.find(&I)->second;
             if (last != NULL) {
                 std::pair<PointsToNode*, PointsToNode*> p = std::make_pair(factory.getNode(&I), factory.getNode(last));
-                block_in->push_back(p);
+                instruction_in->push_back(p);
             }
             last = &I;
         }
@@ -32,6 +34,6 @@ void LivenessPointsTo::runOnFunction(Function &F) {
     }
 }
 
-SmallVector<std::pair<PointsToNode*, PointsToNode*>, 10>* LivenessPointsTo::getPointsTo(BasicBlock &BB) const {
-    return pointsto.find(&BB)->second;
+SmallVector<std::pair<PointsToNode*, PointsToNode*>, 10>* LivenessPointsTo::getPointsTo(Instruction &I) const {
+    return pointsto.find(&I)->second;
 }
