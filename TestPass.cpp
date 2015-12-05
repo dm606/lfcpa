@@ -1,6 +1,6 @@
-#include "llvm/Pass.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/LegacyPassManager.h"
+#include "llvm/Pass.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Transforms/IPO/PassManagerBuilder.h"
 
@@ -25,10 +25,10 @@ struct TestPass : public FunctionPass {
 
         for (BasicBlock &BB : F) {
             for (Instruction &I : BB) {
-                auto sv = *analysis.getPointsTo(I);
+                auto sv = analysis.getPointsTo(I);
                 errs() << "Points-to information at " << BB.getName() << "," << I.getName() << ": ";
                 bool first = true;
-                for (auto i : sv) {
+                for (auto i : *sv) {
                     if (first) {
                         errs() << i.first->getName() << " --> " << i.second->getName();
                         first = false;

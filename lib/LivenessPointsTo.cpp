@@ -8,17 +8,17 @@
 
 void LivenessPointsTo::runOnFunction(Function &F) {
     // Points-to information
-    DenseMap<const Instruction *, SmallVector<std::pair<PointsToNode*, PointsToNode*>, 10> *> ain, aout;
+    DenseMap<const Instruction *, SparseSet<std::pair<PointsToNode*, PointsToNode*>> *> ain, aout;
     // Liveness information
-    DenseMap<const Instruction *, SmallVector<PointsToNode*, 10> *> lin, lout;
+    DenseMap<const Instruction *, SmallPtrSet<PointsToNode*, 10> *> lin, lout;
 
     // Create vectors to store the points-to information in.
     for (auto &BB : F) {
         for (auto &I : BB) {
-            ain.insert(std::make_pair(&I, new SmallVector<std::pair<PointsToNode*, PointsToNode*>, 10>()));
-            aout.insert(std::make_pair(&I, new SmallVector<std::pair<PointsToNode*, PointsToNode*>, 10>()));
-            lin.insert(std::make_pair(&I, new SmallVector<PointsToNode*, 10>()));
-            lout.insert(std::make_pair(&I, new SmallVector<PointsToNode*, 10>()));
+            ain.insert(std::make_pair(&I, new SparseSet<std::pair<PointsToNode*, PointsToNode*>>()));
+            aout.insert(std::make_pair(&I, new SparseSet<std::pair<PointsToNode*, PointsToNode*>>()));
+            lin.insert(std::make_pair(&I, new SmallPtrSet<PointsToNode*, 10>()));
+            lout.insert(std::make_pair(&I, new SmallPtrSet<PointsToNode*, 10>()));
         }
     }
 
@@ -35,6 +35,6 @@ void LivenessPointsTo::runOnFunction(Function &F) {
     }
 }
 
-SmallVector<std::pair<PointsToNode*, PointsToNode*>, 10>* LivenessPointsTo::getPointsTo(Instruction &I) const {
+SparseSet<std::pair<PointsToNode*, PointsToNode*>>* LivenessPointsTo::getPointsTo(Instruction &I) const {
     return pointsto.find(&I)->second;
 }

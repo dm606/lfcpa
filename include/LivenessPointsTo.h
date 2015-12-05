@@ -1,6 +1,7 @@
 #ifndef LFCPA_LIVENESSPOINTSTO_H
 #define LFCPA_LIVENESSPOINTSTO_H
 
+#include "llvm/ADT/SparseSet.h"
 #include "llvm/IR/BasicBlock.h"
 #include "llvm/IR/Function.h"
 
@@ -12,9 +13,9 @@ using namespace llvm;
 class LivenessPointsTo {
 public:
     void runOnFunction (Function&);
-    SmallVector<std::pair<PointsToNode*, PointsToNode*>, 10>* getPointsTo (Instruction &) const;
+    SparseSet<std::pair<PointsToNode*, PointsToNode*>>* getPointsTo (Instruction &) const;
 private:
-    DenseMap<const Instruction *, SmallVector<std::pair<PointsToNode*, PointsToNode*>, 10>*> pointsto;
+    DenseMap<const Instruction *, SparseSet<std::pair<PointsToNode*, PointsToNode*>>*> pointsto;
     PointsToNodeFactory factory;
 };
 
