@@ -26,8 +26,44 @@ Instruction *getPreviousInstruction(Instruction *Instr) {
     return --I;
 }
 
-void LivenessPointsTo::subtractKill(std::set<PointsToNode *>& Lin, Instruction *I) {
-    // TODO
+void LivenessPointsTo::subtractKill(std::set<PointsToNode *>& Lin, Instruction *I, std::set<std::pair<PointsToNode*, PointsToNode*>>* Ain) {
+    Lin.erase(factory.getNode(I));
+
+    if (StoreInst *SI = dyn_cast<StoreInst>(I)) {
+        Value *Ptr = SI->getPointerOperand();
+        PointsToNode *PtrNode = factory.getNode(Ptr);
+
+        bool moreThanOne = false;
+        PointsToNode *PointedTo = NULL;
+
+        for (auto P : *Ain) {
+            if (P.first == PtrNode) {
+                if (PointedTo == NULL)
+                    PointedTo = P.second;
+                else {
+                    moreThanOne = true;
+                    break;
+                }
+            }
+        }
+
+        if (!moreThanOne) {
+            if (PointedTo == NULL || PointedTo == factory.getUnknown()) {
+                // We have no information about what Ptr can point to, so kill
+                // everything.
+                Lin.clear();
+            }
+            else {
+                // Ptr must point to PointedTo, so we can do a strong update
+                // here.
+                Lin.erase(PointedTo);
+            }
+        }
+
+        // If there is more than one value that is possibly pointed to by Ptr,
+        // then we need to perform a weak update, so we don't kill anything
+        // else.
+    }
 }
 
 void LivenessPointsTo::unionRef(std::set<PointsToNode *>& Lin, Instruction *I, std::set<PointsToNode *>* Lout, std::set<std::pair<PointsToNode*, PointsToNode*>>* Ain) {
@@ -118,7 +154,7 @@ void LivenessPointsTo::runOnFunction(Function &F) {
         // Compute lin for the current instruction.
         std::set<PointsToNode *> n;
         n.insert(instruction_lout->begin(), instruction_lout->end());
-        subtractKill(n, I);
+        subtractKill(n, I, instruction_ain);
         unionRef(n, I, instruction_lout, instruction_ain);
         // If the two sets are the same, then no changes need to be made to lin,
         // so don't do anything here. Otherwise, we need to update lin and add
@@ -160,8 +196,8 @@ void LivenessPointsTo::runOnFunction(Function &F) {
         }
     }
 
-   for (auto &KV : ain)
-       pointsto.insert(KV);
+    for (auto &KV : ain)
+        pointsto.insert(KV);
 }
 
 std::set<std::pair<PointsToNode*, PointsToNode*>>* LivenessPointsTo::getPointsTo(Instruction &I) const {

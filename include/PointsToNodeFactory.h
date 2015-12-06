@@ -9,7 +9,9 @@
 class PointsToNodeFactory {
     private:
         DenseMap<const Value *, PointsToNode *> map;
+        PointsToNode unknown;
     public:
+        PointsToNode *getUnknown();
         PointsToNode *getNode(Value *);
 };
 

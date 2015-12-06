@@ -4,6 +4,10 @@
 #include "../include/PointsToNode.h"
 #include "../include/PointsToNodeFactory.h"
 
+PointsToNode *PointsToNodeFactory::getUnknown() {
+    return &unknown;
+}
+
 PointsToNode* PointsToNodeFactory::getNode(Value *V) {
     Value *Stripped = V->stripPointerCasts();
     auto KV = map.find(Stripped);

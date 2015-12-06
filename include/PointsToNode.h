@@ -8,11 +8,16 @@
 using namespace llvm;
 
 class PointsToNode {
+    friend class PointsToNodeFactory;
 private:
     static int nextId;
     const Value *value;
     std::string stdName;
     StringRef name;
+    PointsToNode() {
+        stdName = "?";
+        name = StringRef(stdName);
+    }
 public:
     PointsToNode (Value *value) : value(value) {
         name = value->getName();

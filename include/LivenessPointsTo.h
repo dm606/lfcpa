@@ -16,7 +16,7 @@ public:
     void runOnFunction (Function&);
     std::set<std::pair<PointsToNode*, PointsToNode*>>* getPointsTo (Instruction &) const;
 private:
-    void subtractKill(std::set<PointsToNode *>&, Instruction *);
+    void subtractKill(std::set<PointsToNode *>&, Instruction *, std::set<std::pair<PointsToNode*, PointsToNode*>>*);
     void unionRef(std::set<PointsToNode *>&, Instruction *, std::set<PointsToNode *>*, std::set<std::pair<PointsToNode*, PointsToNode*>>*);
     DenseMap<const Instruction *, std::set<std::pair<PointsToNode*, PointsToNode*>>*> pointsto;
     PointsToNodeFactory factory;
