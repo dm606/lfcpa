@@ -11,17 +11,71 @@
 #include "../include/PointsToNode.h"
 #include "../include/LivenessPointsTo.h"
 
+Instruction *getNextInstruction(Instruction *Instr) {
+    BasicBlock::iterator I(Instr);
+    Instruction *Next = ++I;
+    // There should be at least one more instruction in the basic block.
+    assert(Next != Instr->getParent()->end());
+    return Next;
+}
+
+Instruction *getPreviousInstruction(Instruction *Instr) {
+    BasicBlock::iterator I(Instr);
+    // There should be at least one instruction before Instr.
+    assert (I != Instr->getParent()->begin());
+    return --I;
+}
+
+void LivenessPointsTo::subtractKill(std::set<PointsToNode *>& Lin, Instruction *I) {
+    // TODO
+}
+
+void LivenessPointsTo::unionRef(std::set<PointsToNode *>& Lin, Instruction *I, std::set<PointsToNode *>* Lout, std::set<std::pair<PointsToNode*, PointsToNode*>>* Ain) {
+    if (LoadInst *LI = dyn_cast<LoadInst>(I)) {
+        // We only consider the pointer and the possible values in memory to be
+        // ref'd if the load is live.
+        if (Lout->find(factory.getNode(I)) != Lout->end()) {
+            Value *Ptr = LI->getPointerOperand();
+            PointsToNode *PtrNode = factory.getNode(Ptr);
+            Lin.insert(PtrNode);
+            for (auto P : *Ain)
+                if (P.first == PtrNode)
+                    Lin.insert(P.second);
+        }
+    }
+    else if (StoreInst *SI = dyn_cast<StoreInst>(I)) {
+        Value *Ptr = SI->getPointerOperand();
+        PointsToNode *PtrNode = factory.getNode(Ptr);
+        Lin.insert(PtrNode);
+        // We only consider the stored value to be ref'd if at least one of the
+        // values that can be pointed to by x is live.
+        for (auto P : *Ain) {
+            if (P.first == PtrNode && Lout->find(P.second) != Lout->end()) {
+                Lin.insert(factory.getNode(SI->getValueOperand()));
+                break;
+            }
+        }
+    }
+    else {
+        // If the instruction is not a load or a store, we consider all of it's
+        // operands to be ref'd.
+        for (Use &U : I->operands())
+            if (Value *Operand = dyn_cast<Value>(U))
+                Lin.insert(factory.getNode(Operand));
+    }
+}
+
 void LivenessPointsTo::runOnFunction(Function &F) {
     // Points-to information
-    DenseMap<const Instruction *, SparseSet<std::pair<PointsToNode*, PointsToNode*>> *> ain, aout;
+    DenseMap<const Instruction *, std::set<std::pair<PointsToNode*, PointsToNode*>> *> ain, aout;
     // Liveness information
     DenseMap<const Instruction *, std::set<PointsToNode*> *> lin, lout;
 
     // Create vectors to store the points-to information in.
     for (auto &BB : F) {
         for (auto &I : BB) {
-            ain.insert(std::make_pair(&I, new SparseSet<std::pair<PointsToNode*, PointsToNode*>>()));
-            aout.insert(std::make_pair(&I, new SparseSet<std::pair<PointsToNode*, PointsToNode*>>()));
+            ain.insert(std::make_pair(&I, new std::set<std::pair<PointsToNode*, PointsToNode*>>()));
+            aout.insert(std::make_pair(&I, new std::set<std::pair<PointsToNode*, PointsToNode*>>()));
             lin.insert(std::make_pair(&I, new std::set<PointsToNode*>()));
             lout.insert(std::make_pair(&I, new std::set<PointsToNode*>()));
         }
@@ -65,7 +119,7 @@ void LivenessPointsTo::runOnFunction(Function &F) {
         std::set<PointsToNode *> n;
         n.insert(instruction_lout->begin(), instruction_lout->end());
         subtractKill(n, I);
-        unionRef(n, I);
+        unionRef(n, I, instruction_lout, instruction_ain);
         // If the two sets are the same, then no changes need to be made to lin,
         // so don't do anything here. Otherwise, we need to update lin and add
         // the predecessors of the current instruction to the worklist.
@@ -106,32 +160,10 @@ void LivenessPointsTo::runOnFunction(Function &F) {
         }
     }
 
-    for (auto &KV : ain) {
-        pointsto.insert(KV);
-    }
+   for (auto &KV : ain)
+       pointsto.insert(KV);
 }
 
-Instruction *LivenessPointsTo::getNextInstruction(Instruction *Instr) {
-    BasicBlock::iterator I(Instr);
-    Instruction *Next = ++I;
-    // There should be at least one more instruction in the basic block.
-    assert(Next != Instr->getParent()->end());
-    return Next;
-}
-
-Instruction *LivenessPointsTo::getPreviousInstruction(Instruction *Instr) {
-    BasicBlock::iterator I(Instr);
-    // There should be at least one instruction before Instr.
-    assert (I != Instr->getParent()->begin());
-    return I--;
-}
-
-void LivenessPointsTo::subtractKill(std::set<PointsToNode *>& Lin, Instruction *I) {
-}
-
-void LivenessPointsTo::unionRef(std::set<PointsToNode *>& Lin, Instruction *I) {
-}
-
-SparseSet<std::pair<PointsToNode*, PointsToNode*>>* LivenessPointsTo::getPointsTo(Instruction &I) const {
+std::set<std::pair<PointsToNode*, PointsToNode*>>* LivenessPointsTo::getPointsTo(Instruction &I) const {
     return pointsto.find(&I)->second;
 }
