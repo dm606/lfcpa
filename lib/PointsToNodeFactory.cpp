@@ -4,7 +4,7 @@
 #include "../include/PointsToNode.h"
 #include "../include/PointsToNodeFactory.h"
 
-const PointsToNode *PointsToNodeFactory::getUnknown() const {
+PointsToNode *PointsToNodeFactory::getUnknown() {
     return &unknown;
 }
 

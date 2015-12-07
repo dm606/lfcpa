@@ -22,6 +22,9 @@ private:
                   Instruction *,
                   std::set<PointsToNode *>*,
                   PointsToSet*);
+    void unionRelationRestriction(PointsToSet &,
+                                  PointsToSet *,
+                                  std::set<PointsToNode *> *);
     DenseMap<const Instruction *, PointsToSet*> pointsto;
     PointsToNodeFactory factory;
 };

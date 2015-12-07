@@ -106,6 +106,14 @@ void LivenessPointsTo::unionRef(std::set<PointsToNode *>& Lin,
     }
 }
 
+void LivenessPointsTo::unionRelationRestriction(PointsToSet &Result,
+                                                PointsToSet *Aout,
+                                                std::set<PointsToNode *> *Lin) {
+    for (auto &P : *Aout)
+        if (Lin->find(P.first) != Lin->end())
+            Result.insert(P);
+}
+
 void LivenessPointsTo::runOnFunction(Function &F) {
     // Points-to information
     DenseMap<const Instruction *, PointsToSet *> ain, aout;
@@ -173,7 +181,41 @@ void LivenessPointsTo::runOnFunction(Function &F) {
         }
 
         // Compute ain for the current instruction.
-        // TODO
+        PointsToSet s;
+        if (I == &*inst_begin(F)) {
+            // If this is the first instruction of the block, then we don't know
+            // what anything points to yet.
+            for (PointsToNode *N : *instruction_lin) {
+                std::pair<PointsToNode *, PointsToNode *> p =
+                    std::make_pair(N, factory.getUnknown());
+                s.insert(p);
+            }
+        }
+        else {
+            // If this is not the first instruction, then the points to
+            // information from the predecessors can be propagated forwards.
+            BasicBlock *BB = I->getParent();
+            Instruction *FirstInBB = BB->begin();
+            if (FirstInBB == I) {
+                for (pred_iterator PI = pred_begin(BB), E = pred_end(BB);
+                     PI != E;
+                     ++PI) {
+                    BasicBlock *PredBB = *PI;
+                    Instruction *Pred = --(PredBB->end());
+                    PointsToSet *PredAout = aout.find(Pred)->second;
+                    unionRelationRestriction(s, PredAout, instruction_lin);
+                }
+            }
+            else {
+                Instruction *Pred = getPreviousInstruction(I);
+                PointsToSet *PredAout = aout.find(Pred)->second;
+                unionRelationRestriction(s, PredAout, instruction_lin);
+            }
+        }
+        if (s != *instruction_ain) {
+            instruction_ain->clear();
+            instruction_ain->insert(s.begin(), s.end());
+        }
 
         // Compute aout for the current instruction.
         // TODO
@@ -187,7 +229,7 @@ void LivenessPointsTo::runOnFunction(Function &F) {
                      PI != E;
                      ++PI) {
                     BasicBlock *Pred = *PI;
-                    worklist.push_back(Pred->begin());
+                    worklist.push_back(--(Pred->end()));
                 }
             }
             else
