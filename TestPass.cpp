@@ -26,15 +26,18 @@ struct TestPass : public FunctionPass {
         for (BasicBlock &BB : F) {
             for (Instruction &I : BB) {
                 auto sv = analysis.getPointsTo(I);
-                errs() << "Points-to information at " << BB.getName() << "," << I.getName() << ": ";
+                errs() << "Points-to information at "
+                       << BB.getName() << "," << I.getName() << ": ";
                 bool first = true;
                 for (auto i : *sv) {
                     if (first) {
-                        errs() << i.first->getName() << " --> " << i.second->getName();
+                        errs() << i.first->getName() << " --> "
+                               << i.second->getName();
                         first = false;
                     }
                     else {
-                        errs() << ", " << i.first->getName() << " --> " << i.second->getName();
+                        errs() << ", " << i.first->getName() << " --> "
+                               << i.second->getName();
                     }
                 }
                 errs() << "\n";

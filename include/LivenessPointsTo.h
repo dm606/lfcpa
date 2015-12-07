@@ -13,12 +13,16 @@ using namespace llvm;
 
 class LivenessPointsTo {
 public:
+    typedef std::set<std::pair<PointsToNode *, PointsToNode *>> PointsToSet;
     void runOnFunction (Function&);
-    std::set<std::pair<PointsToNode*, PointsToNode*>>* getPointsTo (Instruction &) const;
+    PointsToSet* getPointsTo (Instruction &) const;
 private:
-    void subtractKill(std::set<PointsToNode *>&, Instruction *, std::set<std::pair<PointsToNode*, PointsToNode*>>*);
-    void unionRef(std::set<PointsToNode *>&, Instruction *, std::set<PointsToNode *>*, std::set<std::pair<PointsToNode*, PointsToNode*>>*);
-    DenseMap<const Instruction *, std::set<std::pair<PointsToNode*, PointsToNode*>>*> pointsto;
+    void subtractKill(std::set<PointsToNode *>&, Instruction *, PointsToSet *);
+    void unionRef(std::set<PointsToNode *>&,
+                  Instruction *,
+                  std::set<PointsToNode *>*,
+                  PointsToSet*);
+    DenseMap<const Instruction *, PointsToSet*> pointsto;
     PointsToNodeFactory factory;
 };
 

@@ -11,7 +11,7 @@
 #include "../include/PointsToNode.h"
 #include "../include/LivenessPointsTo.h"
 
-Instruction *getNextInstruction(Instruction *Instr) {
+Instruction *getNextInstruction(Instruction *Instr)  {
     BasicBlock::iterator I(Instr);
     Instruction *Next = ++I;
     // There should be at least one more instruction in the basic block.
@@ -26,7 +26,9 @@ Instruction *getPreviousInstruction(Instruction *Instr) {
     return --I;
 }
 
-void LivenessPointsTo::subtractKill(std::set<PointsToNode *>& Lin, Instruction *I, std::set<std::pair<PointsToNode*, PointsToNode*>>* Ain) {
+void LivenessPointsTo::subtractKill(std::set<PointsToNode *> &Lin,
+                                    Instruction *I,
+                                    PointsToSet *Ain) {
     Lin.erase(factory.getNode(I));
 
     if (StoreInst *SI = dyn_cast<StoreInst>(I)) {
@@ -34,11 +36,11 @@ void LivenessPointsTo::subtractKill(std::set<PointsToNode *>& Lin, Instruction *
         PointsToNode *PtrNode = factory.getNode(Ptr);
 
         bool moreThanOne = false;
-        PointsToNode *PointedTo = NULL;
+        PointsToNode *PointedTo = nullptr;
 
         for (auto P : *Ain) {
             if (P.first == PtrNode) {
-                if (PointedTo == NULL)
+                if (PointedTo == nullptr)
                     PointedTo = P.second;
                 else {
                     moreThanOne = true;
@@ -48,7 +50,7 @@ void LivenessPointsTo::subtractKill(std::set<PointsToNode *>& Lin, Instruction *
         }
 
         if (!moreThanOne) {
-            if (PointedTo == NULL || PointedTo == factory.getUnknown()) {
+            if (PointedTo == nullptr || PointedTo == factory.getUnknown()) {
                 // We have no information about what Ptr can point to, so kill
                 // everything.
                 Lin.clear();
@@ -66,7 +68,10 @@ void LivenessPointsTo::subtractKill(std::set<PointsToNode *>& Lin, Instruction *
     }
 }
 
-void LivenessPointsTo::unionRef(std::set<PointsToNode *>& Lin, Instruction *I, std::set<PointsToNode *>* Lout, std::set<std::pair<PointsToNode*, PointsToNode*>>* Ain) {
+void LivenessPointsTo::unionRef(std::set<PointsToNode *>& Lin,
+                                Instruction *I,
+                                std::set<PointsToNode *>* Lout,
+                                PointsToSet* Ain) {
     if (LoadInst *LI = dyn_cast<LoadInst>(I)) {
         // We only consider the pointer and the possible values in memory to be
         // ref'd if the load is live.
@@ -103,15 +108,15 @@ void LivenessPointsTo::unionRef(std::set<PointsToNode *>& Lin, Instruction *I, s
 
 void LivenessPointsTo::runOnFunction(Function &F) {
     // Points-to information
-    DenseMap<const Instruction *, std::set<std::pair<PointsToNode*, PointsToNode*>> *> ain, aout;
+    DenseMap<const Instruction *, PointsToSet *> ain, aout;
     // Liveness information
     DenseMap<const Instruction *, std::set<PointsToNode*> *> lin, lout;
 
     // Create vectors to store the points-to information in.
     for (auto &BB : F) {
         for (auto &I : BB) {
-            ain.insert(std::make_pair(&I, new std::set<std::pair<PointsToNode*, PointsToNode*>>()));
-            aout.insert(std::make_pair(&I, new std::set<std::pair<PointsToNode*, PointsToNode*>>()));
+            ain.insert(std::make_pair(&I, new PointsToSet()));
+            aout.insert(std::make_pair(&I, new PointsToSet()));
             lin.insert(std::make_pair(&I, new std::set<PointsToNode*>()));
             lout.insert(std::make_pair(&I, new std::set<PointsToNode*>()));
         }
@@ -124,8 +129,10 @@ void LivenessPointsTo::runOnFunction(Function &F) {
 
     while (!worklist.empty()) {
         Instruction *I = worklist.pop_back_val();
-        auto instruction_ain = ain.find(I)->second, instruction_aout = aout.find(I)->second;
-        auto instruction_lin = lin.find(I)->second, instruction_lout = lout.find(I)->second;
+        auto instruction_ain = ain.find(I)->second,
+             instruction_aout = aout.find(I)->second;
+        auto instruction_lin = lin.find(I)->second,
+             instruction_lout = lout.find(I)->second;
 
         bool addPredsToWorklist = false, addSuccsToWorklist = false;
 
@@ -176,7 +183,9 @@ void LivenessPointsTo::runOnFunction(Function &F) {
             BasicBlock *BB = I->getParent();
             Instruction *FirstInBB = BB->begin();
             if (FirstInBB == I) {
-                for (pred_iterator PI = pred_begin(BB), E = pred_end(BB); PI != E; ++PI) {
+                for (pred_iterator PI = pred_begin(BB), E = pred_end(BB);
+                     PI != E;
+                     ++PI) {
                     BasicBlock *Pred = *PI;
                     worklist.push_back(Pred->begin());
                 }
@@ -200,6 +209,7 @@ void LivenessPointsTo::runOnFunction(Function &F) {
         pointsto.insert(KV);
 }
 
-std::set<std::pair<PointsToNode*, PointsToNode*>>* LivenessPointsTo::getPointsTo(Instruction &I) const {
+std::set<std::pair<PointsToNode *, PointsToNode *>>*
+LivenessPointsTo::getPointsTo(Instruction &I) const {
     return pointsto.find(&I)->second;
 }
