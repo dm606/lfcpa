@@ -15,7 +15,7 @@ PointsToNode* PointsToNodeFactory::getNode(Value *V) {
         return KV->second;
     else {
         PointsToNode *Node = new PointsToNode(V);
-        map.insert(std::make_pair(V, Node));
+        map.insert(std::make_pair(Stripped, Node));
         return Node;
     }
 }
