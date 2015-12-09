@@ -114,7 +114,10 @@ void LivenessPointsTo::unionRelationRestriction(PointsToSet &Result,
             Result.insert(P);
 }
 
-std::set<PointsToNode *> LivenessPointsTo::getRestrictedDef(Instruction *I, PointsToSet *Ain, std::set<PointsToNode *> *Lout) {
+std::set<PointsToNode *>
+LivenessPointsTo::getRestrictedDef(Instruction *I,
+                                   PointsToSet *Ain,
+                                   std::set<PointsToNode *> *Lout) {
     std::set<PointsToNode *> s;
     if (StoreInst *SI = dyn_cast<StoreInst>(I)) {
         Value *Ptr = SI->getPointerOperand();
@@ -132,7 +135,8 @@ std::set<PointsToNode *> LivenessPointsTo::getRestrictedDef(Instruction *I, Poin
     return s;
 }
 
-std::set<PointsToNode *> LivenessPointsTo::getPointee(Instruction *I, PointsToSet *Ain) {
+std::set<PointsToNode *> LivenessPointsTo::getPointee(Instruction *I,
+                                                      PointsToSet *Ain) {
     std::set<PointsToNode *> s;
     if (LoadInst *LI = dyn_cast<LoadInst>(I)) {
         Value *Ptr = LI->getPointerOperand();
@@ -162,7 +166,9 @@ std::set<PointsToNode *> LivenessPointsTo::getPointee(Instruction *I, PointsToSe
     return s;
 }
 
-void LivenessPointsTo::unionCrossProduct(PointsToSet &Result, std::set<PointsToNode *> &A, std::set<PointsToNode *> &B) {
+void LivenessPointsTo::unionCrossProduct(PointsToSet &Result,
+                                         std::set<PointsToNode *> &A,
+                                         std::set<PointsToNode *> &B) {
     for (auto &X : A)
         for (auto &Y : B)
             Result.insert(std::make_pair(X, Y));
@@ -197,7 +203,9 @@ void LivenessPointsTo::runOnFunction(Function &F) {
         auto instruction_lin = lin.find(I)->second,
              instruction_lout = lout.find(I)->second;
 
-        bool addPredsToWorklist = false, addSuccsToWorklist = false, addCurrToWorklist = false;
+        bool addPredsToWorklist = false,
+             addSuccsToWorklist = false,
+             addCurrToWorklist = false;
 
         // Compute lout for the current instruction.
         if (TerminatorInst *TI = dyn_cast<TerminatorInst>(I)) {
@@ -278,7 +286,8 @@ void LivenessPointsTo::runOnFunction(Function &F) {
         std::set<PointsToNode *> notKilled = *instruction_lout;
         subtractKill(notKilled, I, instruction_ain);
         unionRelationRestriction(s, instruction_ain, &notKilled);
-        std::set<PointsToNode *> def = getRestrictedDef(I, instruction_ain, instruction_lout);
+        std::set<PointsToNode *> def =
+            getRestrictedDef(I, instruction_ain, instruction_lout);
         std::set<PointsToNode *> pointee = getPointee(I, instruction_ain);
         unionCrossProduct(s, def, pointee);
         if (s != *instruction_aout) {
