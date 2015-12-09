@@ -30,7 +30,6 @@ void LivenessPointsTo::subtractKill(std::set<PointsToNode *> &Lin,
                                     Instruction *I,
                                     PointsToSet *Ain) {
     Lin.erase(factory.getNode(I));
-
     if (StoreInst *SI = dyn_cast<StoreInst>(I)) {
         Value *Ptr = SI->getPointerOperand();
         PointsToNode *PtrNode = factory.getNode(Ptr);
@@ -79,7 +78,7 @@ void LivenessPointsTo::unionRef(std::set<PointsToNode *>& Lin,
             Value *Ptr = LI->getPointerOperand();
             PointsToNode *PtrNode = factory.getNode(Ptr);
             Lin.insert(PtrNode);
-            for (auto P : *Ain)
+            for (auto &P : *Ain)
                 if (P.first == PtrNode)
                     Lin.insert(P.second);
         }
@@ -88,6 +87,7 @@ void LivenessPointsTo::unionRef(std::set<PointsToNode *>& Lin,
         Value *Ptr = SI->getPointerOperand();
         PointsToNode *PtrNode = factory.getNode(Ptr);
         Lin.insert(PtrNode);
+
         // We only consider the stored value to be ref'd if at least one of the
         // values that can be pointed to by x is live.
         for (auto P : *Ain) {
@@ -114,6 +114,60 @@ void LivenessPointsTo::unionRelationRestriction(PointsToSet &Result,
             Result.insert(P);
 }
 
+std::set<PointsToNode *> LivenessPointsTo::getRestrictedDef(Instruction *I, PointsToSet *Ain, std::set<PointsToNode *> *Lout) {
+    std::set<PointsToNode *> s;
+    if (StoreInst *SI = dyn_cast<StoreInst>(I)) {
+        Value *Ptr = SI->getPointerOperand();
+        PointsToNode *PtrNode = factory.getNode(Ptr);
+
+        for (auto &P : *Ain)
+            if (P.first == PtrNode && Lout->find(P.second) != Lout->end())
+                s.insert(P.second);
+    }
+    else {
+        PointsToNode *N = factory.getNode(I);
+        if (Lout->find(N) != Lout->end())
+            s.insert(N);
+    }
+    return s;
+}
+
+std::set<PointsToNode *> LivenessPointsTo::getPointee(Instruction *I, PointsToSet *Ain) {
+    std::set<PointsToNode *> s;
+    if (LoadInst *LI = dyn_cast<LoadInst>(I)) {
+        Value *Ptr = LI->getPointerOperand();
+        PointsToNode *PtrNode = factory.getNode(Ptr);
+        std::set<PointsToNode *> t;
+        for (auto &P : *Ain)
+            if (P.first == PtrNode)
+                t.insert(P.second);
+        for (auto &P : *Ain)
+            if (t.find(P.first) != t.end())
+                s.insert(P.second);
+    }
+    else if (StoreInst *SI = dyn_cast<StoreInst>(I)) {
+        Value *V = SI->getValueOperand();
+        PointsToNode *VNode = factory.getNode(V);
+
+        for (auto &P : *Ain)
+            if (P.first == VNode)
+                s.insert(P.second);
+    }
+    else if (AllocaInst *AI = dyn_cast<AllocaInst>(I)) {
+        // If the instruction is an alloca, then we consider the pointer to be
+        // to a special location which does not correspond to any Value and is
+        // disjoint from all other locations.
+        s.insert(factory.getAllocaNode(AI));
+    }
+    return s;
+}
+
+void LivenessPointsTo::unionCrossProduct(PointsToSet &Result, std::set<PointsToNode *> &A, std::set<PointsToNode *> &B) {
+    for (auto &X : A)
+        for (auto &Y : B)
+            Result.insert(std::make_pair(X, Y));
+}
+
 void LivenessPointsTo::runOnFunction(Function &F) {
     // Points-to information
     DenseMap<const Instruction *, PointsToSet *> ain, aout;
@@ -137,6 +191,7 @@ void LivenessPointsTo::runOnFunction(Function &F) {
 
     while (!worklist.empty()) {
         Instruction *I = worklist.pop_back_val();
+
         auto instruction_ain = ain.find(I)->second,
              instruction_aout = aout.find(I)->second;
         auto instruction_lin = lin.find(I)->second,
@@ -163,6 +218,7 @@ void LivenessPointsTo::runOnFunction(Function &F) {
             if (*succ_lin != *instruction_lout) {
                 instruction_lout->clear();
                 instruction_lout->insert(succ_lin->begin(), succ_lin->end());
+                addPredsToWorklist = true;
             }
         }
 
@@ -177,7 +233,6 @@ void LivenessPointsTo::runOnFunction(Function &F) {
         if (n != *instruction_lin) {
             instruction_lin->clear();
             instruction_lin->insert(n.begin(), n.end());
-            addPredsToWorklist = true;
         }
 
         // Compute ain for the current instruction.
@@ -218,7 +273,18 @@ void LivenessPointsTo::runOnFunction(Function &F) {
         }
 
         // Compute aout for the current instruction.
-        // TODO
+        s = PointsToSet();
+        std::set<PointsToNode *> notKilled = *instruction_lout;
+        subtractKill(notKilled, I, instruction_ain);
+        unionRelationRestriction(s, instruction_ain, &notKilled);
+        std::set<PointsToNode *> def = getRestrictedDef(I, instruction_ain, instruction_lout);
+        std::set<PointsToNode *> pointee = getPointee(I, instruction_ain);
+        unionCrossProduct(s, def, pointee);
+        if (s != *instruction_aout) {
+            instruction_aout->clear();
+            instruction_aout->insert(s.begin(), s.end());
+            addSuccsToWorklist = true;
+        }
 
         // Add preds to worklist
         if (addPredsToWorklist) {

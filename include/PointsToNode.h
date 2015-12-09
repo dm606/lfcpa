@@ -2,6 +2,7 @@
 #define LFCPA_POINTSTONODE_H
 
 #include "llvm/ADT/StringRef.h"
+#include "llvm/IR/Instructions.h"
 #include "llvm/IR/Value.h"
 #include "llvm/Support/raw_ostream.h"
 
@@ -17,6 +18,12 @@ private:
     PointsToNode() {
         stdName = "?";
         name = StringRef(stdName);
+    }
+    static PointsToNode *createAlloca(AllocaInst *AI) {
+        PointsToNode *result = new PointsToNode();
+        result->stdName = "alloca:" + AI->getName().str();
+        result->name = StringRef(result->stdName);
+        return result;
     }
 public:
     PointsToNode (Value *value) : value(value) {

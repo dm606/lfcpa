@@ -17,6 +17,9 @@ public:
     void runOnFunction (Function&);
     PointsToSet* getPointsTo (Instruction &) const;
 private:
+    std::set<PointsToNode *> getRestrictedDef(Instruction *, PointsToSet *, std::set<PointsToNode *> *);
+    std::set<PointsToNode *> getPointee(Instruction *, PointsToSet *);
+    void unionCrossProduct(PointsToSet &, std::set<PointsToNode *> &, std::set<PointsToNode *> &);
     void subtractKill(std::set<PointsToNode *>&, Instruction *, PointsToSet *);
     void unionRef(std::set<PointsToNode *>&,
                   Instruction *,

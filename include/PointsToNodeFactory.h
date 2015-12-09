@@ -9,10 +9,12 @@
 class PointsToNodeFactory {
     private:
         DenseMap<const Value *, PointsToNode *> map;
+        DenseMap<const AllocaInst *, PointsToNode *> allocaMap;
         PointsToNode unknown;
     public:
         PointsToNode *getUnknown();
         PointsToNode *getNode(Value *);
+        PointsToNode *getAllocaNode(AllocaInst *I);
 };
 
 #endif

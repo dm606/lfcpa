@@ -20,3 +20,14 @@ PointsToNode* PointsToNodeFactory::getNode(Value *V) {
     }
 }
 
+PointsToNode* PointsToNodeFactory::getAllocaNode(AllocaInst *I) {
+    auto KV = allocaMap.find(I);
+    if (KV != allocaMap.end())
+        return KV->second;
+    else {
+        PointsToNode *Node = PointsToNode::createAlloca(I);
+        allocaMap.insert(std::make_pair(I, Node));
+        return Node;
+    }
+}
+
