@@ -192,7 +192,7 @@ void LivenessPointsTo::runOnFunction(Function &F) {
 
     // Create and initialize worklist.
     SmallVector<Instruction *, 128> worklist;
-    for (inst_iterator I = inst_begin(F), E = inst_end(F); I != E; ++I)
+    for (inst_iterator I = inst_begin(F), E = inst_end(F); I != E; I++)
         worklist.push_back(&*I);
 
     while (!worklist.empty()) {
@@ -296,6 +296,20 @@ void LivenessPointsTo::runOnFunction(Function &F) {
             addSuccsToWorklist = true;
         }
 
+        // Add succs to worklist
+        if (addSuccsToWorklist) {
+            if (TerminatorInst *TI = dyn_cast<TerminatorInst>(I)) {
+                for (unsigned i = 0; i < TI->getNumSuccessors(); i++)
+                    worklist.push_back(TI->getSuccessor(i)->begin());
+            }
+            else
+                worklist.push_back(getNextInstruction(I));
+        }
+
+        // Add current instruction to worklist
+        if (addCurrToWorklist)
+            worklist.push_back(I);
+
         // Add preds to worklist
         if (addPredsToWorklist) {
             BasicBlock *BB = I->getParent();
@@ -311,20 +325,6 @@ void LivenessPointsTo::runOnFunction(Function &F) {
             else
                 worklist.push_back(getPreviousInstruction(I));
         }
-
-        // Add succs to worklist
-        if (addSuccsToWorklist) {
-            if (TerminatorInst *TI = dyn_cast<TerminatorInst>(I)) {
-                for (unsigned i = 0; i < TI->getNumSuccessors(); i++)
-                    worklist.push_back(TI->getSuccessor(i)->begin());
-            }
-            else
-                worklist.push_back(getNextInstruction(I));
-        }
-
-        // Add current instruction to worklist
-        if (addCurrToWorklist)
-            worklist.push_back(I);
     }
 
     for (auto &KV : ain)
