@@ -197,7 +197,7 @@ void LivenessPointsTo::runOnFunction(Function &F) {
         auto instruction_lin = lin.find(I)->second,
              instruction_lout = lout.find(I)->second;
 
-        bool addPredsToWorklist = false, addSuccsToWorklist = false;
+        bool addPredsToWorklist = false, addSuccsToWorklist = false, addCurrToWorklist = false;
 
         // Compute lout for the current instruction.
         if (TerminatorInst *TI = dyn_cast<TerminatorInst>(I)) {
@@ -218,7 +218,6 @@ void LivenessPointsTo::runOnFunction(Function &F) {
             if (*succ_lin != *instruction_lout) {
                 instruction_lout->clear();
                 instruction_lout->insert(succ_lin->begin(), succ_lin->end());
-                addPredsToWorklist = true;
             }
         }
 
@@ -233,6 +232,7 @@ void LivenessPointsTo::runOnFunction(Function &F) {
         if (n != *instruction_lin) {
             instruction_lin->clear();
             instruction_lin->insert(n.begin(), n.end());
+            addPredsToWorklist = true;
         }
 
         // Compute ain for the current instruction.
@@ -270,6 +270,7 @@ void LivenessPointsTo::runOnFunction(Function &F) {
         if (s != *instruction_ain) {
             instruction_ain->clear();
             instruction_ain->insert(s.begin(), s.end());
+            addCurrToWorklist = true;
         }
 
         // Compute aout for the current instruction.
@@ -311,6 +312,10 @@ void LivenessPointsTo::runOnFunction(Function &F) {
             else
                 worklist.push_back(getNextInstruction(I));
         }
+
+        // Add current instruction to worklist
+        if (addCurrToWorklist)
+            worklist.push_back(I);
     }
 
     for (auto &KV : ain)
