@@ -246,8 +246,8 @@ void LivenessPointsTo::runOnFunction(Function &F) {
         // Compute ain for the current instruction.
         PointsToSet s;
         if (I == &*inst_begin(F)) {
-            // If this is the first instruction of the block, then we don't know
-            // what anything points to yet.
+            // If this is the first instruction of the function, then we don't
+            // know what anything points to yet.
             for (PointsToNode *N : *instruction_lin) {
                 std::pair<PointsToNode *, PointsToNode *> p =
                     std::make_pair(N, factory.getUnknown());
