@@ -136,7 +136,7 @@ LivenessPointsTo::getRestrictedDef(Instruction *I,
             if (P.first == PtrNode && Lout->find(P.second) != Lout->end())
                 s.insert(P.second);
     }
-    else {
+    else if (isa<LoadInst>(I) || isa<PHINode>(I) || isa<AllocaInst>(I)) {
         PointsToNode *N = factory.getNode(I);
         if (Lout->find(N) != Lout->end())
             s.insert(N);
