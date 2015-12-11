@@ -13,26 +13,29 @@ using namespace llvm;
 
 class LivenessPointsTo {
 public:
-    typedef std::set<std::pair<PointsToNode *, PointsToNode *>> PointsToSet;
+    typedef std::set<std::pair<PointsToNode *, PointsToNode *>>
+        PointsToRelation;
     void runOnFunction (Function&);
-    PointsToSet* getPointsTo (Instruction &) const;
+    PointsToRelation* getPointsTo (Instruction &) const;
 private:
     std::set<PointsToNode *> getRestrictedDef(Instruction *,
-                                              PointsToSet *,
+                                              PointsToRelation *,
                                               std::set<PointsToNode *> *);
-    std::set<PointsToNode *> getPointee(Instruction *, PointsToSet *);
-    void unionCrossProduct(PointsToSet &,
+    std::set<PointsToNode *> getPointee(Instruction *, PointsToRelation *);
+    void unionCrossProduct(PointsToRelation &,
                            std::set<PointsToNode *> &,
                            std::set<PointsToNode *> &);
-    void subtractKill(std::set<PointsToNode *>&, Instruction *, PointsToSet *);
+    void subtractKill(std::set<PointsToNode *>&,
+                      Instruction *,
+                      PointsToRelation *);
     void unionRef(std::set<PointsToNode *>&,
                   Instruction *,
                   std::set<PointsToNode *>*,
-                  PointsToSet*);
-    void unionRelationRestriction(PointsToSet &,
-                                  PointsToSet *,
+                  PointsToRelation*);
+    void unionRelationRestriction(PointsToRelation &,
+                                  PointsToRelation *,
                                   std::set<PointsToNode *> *);
-    DenseMap<const Instruction *, PointsToSet*> pointsto;
+    DenseMap<const Instruction *, PointsToRelation*> pointsto;
     PointsToNodeFactory factory;
 };
 

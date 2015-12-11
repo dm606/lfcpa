@@ -28,7 +28,7 @@ Instruction *getPreviousInstruction(Instruction *Instr) {
 
 void LivenessPointsTo::subtractKill(std::set<PointsToNode *> &Lin,
                                     Instruction *I,
-                                    PointsToSet *Ain) {
+                                    PointsToRelation *Ain) {
     Lin.erase(factory.getNode(I));
     if (StoreInst *SI = dyn_cast<StoreInst>(I)) {
         Value *Ptr = SI->getPointerOperand();
@@ -70,7 +70,7 @@ void LivenessPointsTo::subtractKill(std::set<PointsToNode *> &Lin,
 void LivenessPointsTo::unionRef(std::set<PointsToNode *>& Lin,
                                 Instruction *I,
                                 std::set<PointsToNode *>* Lout,
-                                PointsToSet* Ain) {
+                                PointsToRelation* Ain) {
     if (LoadInst *LI = dyn_cast<LoadInst>(I)) {
         // We only consider the pointer and the possible values in memory to be
         // ref'd if the load is live.
@@ -106,8 +106,8 @@ void LivenessPointsTo::unionRef(std::set<PointsToNode *>& Lin,
     }
 }
 
-void LivenessPointsTo::unionRelationRestriction(PointsToSet &Result,
-                                                PointsToSet *Aout,
+void LivenessPointsTo::unionRelationRestriction(PointsToRelation &Result,
+                                                PointsToRelation *Aout,
                                                 std::set<PointsToNode *> *Lin) {
     for (auto &P : *Aout)
         if (Lin->find(P.first) != Lin->end())
@@ -116,7 +116,7 @@ void LivenessPointsTo::unionRelationRestriction(PointsToSet &Result,
 
 std::set<PointsToNode *>
 LivenessPointsTo::getRestrictedDef(Instruction *I,
-                                   PointsToSet *Ain,
+                                   PointsToRelation *Ain,
                                    std::set<PointsToNode *> *Lout) {
     std::set<PointsToNode *> s;
     if (StoreInst *SI = dyn_cast<StoreInst>(I)) {
@@ -136,7 +136,7 @@ LivenessPointsTo::getRestrictedDef(Instruction *I,
 }
 
 std::set<PointsToNode *> LivenessPointsTo::getPointee(Instruction *I,
-                                                      PointsToSet *Ain) {
+                                                      PointsToRelation *Ain) {
     std::set<PointsToNode *> s;
     if (LoadInst *LI = dyn_cast<LoadInst>(I)) {
         Value *Ptr = LI->getPointerOperand();
@@ -166,7 +166,7 @@ std::set<PointsToNode *> LivenessPointsTo::getPointee(Instruction *I,
     return s;
 }
 
-void LivenessPointsTo::unionCrossProduct(PointsToSet &Result,
+void LivenessPointsTo::unionCrossProduct(PointsToRelation &Result,
                                          std::set<PointsToNode *> &A,
                                          std::set<PointsToNode *> &B) {
     for (auto &X : A)
@@ -176,15 +176,15 @@ void LivenessPointsTo::unionCrossProduct(PointsToSet &Result,
 
 void LivenessPointsTo::runOnFunction(Function &F) {
     // Points-to information
-    DenseMap<const Instruction *, PointsToSet *> ain, aout;
+    DenseMap<const Instruction *, PointsToRelation *> ain, aout;
     // Liveness information
     DenseMap<const Instruction *, std::set<PointsToNode*> *> lin, lout;
 
     // Create vectors to store the points-to information in.
     for (auto &BB : F) {
         for (auto &I : BB) {
-            ain.insert(std::make_pair(&I, new PointsToSet()));
-            aout.insert(std::make_pair(&I, new PointsToSet()));
+            ain.insert(std::make_pair(&I, new PointsToRelation()));
+            aout.insert(std::make_pair(&I, new PointsToRelation()));
             lin.insert(std::make_pair(&I, new std::set<PointsToNode*>()));
             lout.insert(std::make_pair(&I, new std::set<PointsToNode*>()));
         }
@@ -244,7 +244,7 @@ void LivenessPointsTo::runOnFunction(Function &F) {
         }
 
         // Compute ain for the current instruction.
-        PointsToSet s;
+        PointsToRelation s;
         if (I == &*inst_begin(F)) {
             // If this is the first instruction of the function, then we don't
             // know what anything points to yet.
@@ -265,13 +265,13 @@ void LivenessPointsTo::runOnFunction(Function &F) {
                      ++PI) {
                     BasicBlock *PredBB = *PI;
                     Instruction *Pred = --(PredBB->end());
-                    PointsToSet *PredAout = aout.find(Pred)->second;
+                    PointsToRelation *PredAout = aout.find(Pred)->second;
                     unionRelationRestriction(s, PredAout, instruction_lin);
                 }
             }
             else {
                 Instruction *Pred = getPreviousInstruction(I);
-                PointsToSet *PredAout = aout.find(Pred)->second;
+                PointsToRelation *PredAout = aout.find(Pred)->second;
                 unionRelationRestriction(s, PredAout, instruction_lin);
             }
         }
@@ -282,7 +282,7 @@ void LivenessPointsTo::runOnFunction(Function &F) {
         }
 
         // Compute aout for the current instruction.
-        s = PointsToSet();
+        s = PointsToRelation();
         std::set<PointsToNode *> notKilled = *instruction_lout;
         subtractKill(notKilled, I, instruction_ain);
         unionRelationRestriction(s, instruction_ain, &notKilled);
