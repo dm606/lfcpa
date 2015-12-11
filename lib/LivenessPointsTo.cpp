@@ -97,9 +97,18 @@ void LivenessPointsTo::unionRef(std::set<PointsToNode *>& Lin,
             }
         }
     }
+    else if (isa<PHINode>(I)) {
+        // We only consider the operands of the PHI node to be ref'd if the node
+        // itself is live.
+        if (Lout->find(factory.getNode(I)) != Lout->end()) {
+            for (Use &U : I->operands())
+                if (Value *Operand = dyn_cast<Value>(U))
+                    Lin.insert(factory.getNode(Operand));
+        }
+    }
     else {
         // If the instruction is not a load or a store, we consider all of it's
-        // operands to be ref'd.
+        // operands to be ref'd, even if the instruction is not live.
         for (Use &U : I->operands())
             if (Value *Operand = dyn_cast<Value>(U))
                 Lin.insert(factory.getNode(Operand));
@@ -162,6 +171,16 @@ std::set<PointsToNode *> LivenessPointsTo::getPointee(Instruction *I,
         // to a special location which does not correspond to any Value and is
         // disjoint from all other locations.
         s.insert(factory.getAllocaNode(AI));
+    }
+    else if (PHINode *Phi = dyn_cast<PHINode>(I)) {
+        // The result of the phi can point to anything that an operand of the
+        // phi can point to.
+        for (auto &V : Phi->incoming_values()) {
+            PointsToNode *VNode = factory.getNode(V);
+            for (auto &P : *Ain)
+                if (P.first == VNode)
+                    s.insert(P.second);
+        }
     }
     return s;
 }
