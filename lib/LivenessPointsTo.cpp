@@ -97,9 +97,9 @@ void LivenessPointsTo::unionRef(std::set<PointsToNode *>& Lin,
             }
         }
     }
-    else if (isa<PHINode>(I)) {
-        // We only consider the operands of the PHI node to be ref'd if the node
-        // itself is live.
+    else if (isa<PHINode>(I) || isa<SelectInst>(I)) {
+        // We only consider the operands of a PHI node or select instruction to
+        // be ref'd if I is live.
         if (Lout->find(factory.getNode(I)) != Lout->end()) {
             for (Use &U : I->operands())
                 if (Value *Operand = dyn_cast<Value>(U))
@@ -136,12 +136,32 @@ LivenessPointsTo::getRestrictedDef(Instruction *I,
             if (P.first == PtrNode && Lout->find(P.second) != Lout->end())
                 s.insert(P.second);
     }
-    else if (isa<LoadInst>(I) || isa<PHINode>(I) || isa<AllocaInst>(I)) {
-        PointsToNode *N = factory.getNode(I);
-        if (Lout->find(N) != Lout->end())
-            s.insert(N);
+    else {
+        switch (I->getOpcode()) {
+            case Instruction::Alloca:
+            case Instruction::Load:
+            case Instruction::PHI:
+            case Instruction::Select:
+                {
+                    PointsToNode *N = factory.getNode(I);
+                    if (Lout->find(N) != Lout->end())
+                        s.insert(N);
+                }
+                break;
+            default:
+                break;
+        }
     }
     return s;
+}
+
+void LivenessPointsTo::insertPointedToBy(std::set<PointsToNode *> &S,
+                                         Value *V,
+                                         PointsToRelation *Ain) {
+    PointsToNode *VNode = factory.getNode(V);
+    for (auto &P : *Ain)
+        if (P.first == VNode)
+            S.insert(P.second);
 }
 
 std::set<PointsToNode *> LivenessPointsTo::getPointee(Instruction *I,
@@ -160,11 +180,7 @@ std::set<PointsToNode *> LivenessPointsTo::getPointee(Instruction *I,
     }
     else if (StoreInst *SI = dyn_cast<StoreInst>(I)) {
         Value *V = SI->getValueOperand();
-        PointsToNode *VNode = factory.getNode(V);
-
-        for (auto &P : *Ain)
-            if (P.first == VNode)
-                s.insert(P.second);
+        insertPointedToBy(s, V, Ain);
     }
     else if (AllocaInst *AI = dyn_cast<AllocaInst>(I)) {
         // If the instruction is an alloca, then we consider the pointer to be
@@ -175,12 +191,14 @@ std::set<PointsToNode *> LivenessPointsTo::getPointee(Instruction *I,
     else if (PHINode *Phi = dyn_cast<PHINode>(I)) {
         // The result of the phi can point to anything that an operand of the
         // phi can point to.
-        for (auto &V : Phi->incoming_values()) {
-            PointsToNode *VNode = factory.getNode(V);
-            for (auto &P : *Ain)
-                if (P.first == VNode)
-                    s.insert(P.second);
-        }
+        for (auto &V : Phi->incoming_values())
+            insertPointedToBy(s, V, Ain);
+    }
+    else if (SelectInst *SI = dyn_cast<SelectInst>(I)) {
+        // The result of the select can point to anything that one of the
+        // selected values can point to.
+        insertPointedToBy(s, SI->getTrueValue(), Ain);
+        insertPointedToBy(s, SI->getFalseValue(), Ain);
     }
     return s;
 }

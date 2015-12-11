@@ -21,6 +21,9 @@ private:
     std::set<PointsToNode *> getRestrictedDef(Instruction *,
                                               PointsToRelation *,
                                               std::set<PointsToNode *> *);
+    void insertPointedToBy(std::set<PointsToNode *> &,
+                           Value *,
+                           PointsToRelation *);
     std::set<PointsToNode *> getPointee(Instruction *, PointsToRelation *);
     void unionCrossProduct(PointsToRelation &,
                            std::set<PointsToNode *> &,
