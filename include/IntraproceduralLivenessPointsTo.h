@@ -11,7 +11,7 @@
 
 using namespace llvm;
 
-class LivenessPointsTo {
+class IntraproceduralLivenessPointsTo {
 public:
     typedef std::set<std::pair<PointsToNode *, PointsToNode *>>
         PointsToRelation;

@@ -9,7 +9,7 @@
 #include "llvm/Support/raw_ostream.h"
 
 #include "../include/PointsToNode.h"
-#include "../include/LivenessPointsTo.h"
+#include "../include/IntraproceduralLivenessPointsTo.h"
 
 Instruction *getNextInstruction(Instruction *Instr)  {
     BasicBlock::iterator I(Instr);
@@ -26,7 +26,7 @@ Instruction *getPreviousInstruction(Instruction *Instr) {
     return --I;
 }
 
-void LivenessPointsTo::subtractKill(std::set<PointsToNode *> &Lin,
+void IntraproceduralLivenessPointsTo::subtractKill(std::set<PointsToNode *> &Lin,
                                     Instruction *I,
                                     PointsToRelation *Ain) {
     Lin.erase(factory.getNode(I));
@@ -67,7 +67,7 @@ void LivenessPointsTo::subtractKill(std::set<PointsToNode *> &Lin,
     }
 }
 
-void LivenessPointsTo::unionRef(std::set<PointsToNode *>& Lin,
+void IntraproceduralLivenessPointsTo::unionRef(std::set<PointsToNode *>& Lin,
                                 Instruction *I,
                                 std::set<PointsToNode *>* Lout,
                                 PointsToRelation* Ain) {
@@ -115,7 +115,7 @@ void LivenessPointsTo::unionRef(std::set<PointsToNode *>& Lin,
     }
 }
 
-void LivenessPointsTo::unionRelationRestriction(PointsToRelation &Result,
+void IntraproceduralLivenessPointsTo::unionRelationRestriction(PointsToRelation &Result,
                                                 PointsToRelation *Aout,
                                                 std::set<PointsToNode *> *Lin) {
     for (auto &P : *Aout)
@@ -124,7 +124,7 @@ void LivenessPointsTo::unionRelationRestriction(PointsToRelation &Result,
 }
 
 std::set<PointsToNode *>
-LivenessPointsTo::getRestrictedDef(Instruction *I,
+IntraproceduralLivenessPointsTo::getRestrictedDef(Instruction *I,
                                    PointsToRelation *Ain,
                                    std::set<PointsToNode *> *Lout) {
     std::set<PointsToNode *> s;
@@ -155,7 +155,7 @@ LivenessPointsTo::getRestrictedDef(Instruction *I,
     return s;
 }
 
-void LivenessPointsTo::insertPointedToBy(std::set<PointsToNode *> &S,
+void IntraproceduralLivenessPointsTo::insertPointedToBy(std::set<PointsToNode *> &S,
                                          Value *V,
                                          PointsToRelation *Ain) {
     PointsToNode *VNode = factory.getNode(V);
@@ -164,7 +164,7 @@ void LivenessPointsTo::insertPointedToBy(std::set<PointsToNode *> &S,
             S.insert(P.second);
 }
 
-std::set<PointsToNode *> LivenessPointsTo::getPointee(Instruction *I,
+std::set<PointsToNode *> IntraproceduralLivenessPointsTo::getPointee(Instruction *I,
                                                       PointsToRelation *Ain) {
     std::set<PointsToNode *> s;
     if (LoadInst *LI = dyn_cast<LoadInst>(I)) {
@@ -203,7 +203,7 @@ std::set<PointsToNode *> LivenessPointsTo::getPointee(Instruction *I,
     return s;
 }
 
-void LivenessPointsTo::unionCrossProduct(PointsToRelation &Result,
+void IntraproceduralLivenessPointsTo::unionCrossProduct(PointsToRelation &Result,
                                          std::set<PointsToNode *> &A,
                                          std::set<PointsToNode *> &B) {
     for (auto &X : A)
@@ -211,7 +211,7 @@ void LivenessPointsTo::unionCrossProduct(PointsToRelation &Result,
             Result.insert(std::make_pair(X, Y));
 }
 
-void LivenessPointsTo::runOnFunction(Function &F) {
+void IntraproceduralLivenessPointsTo::runOnFunction(Function &F) {
     // Points-to information
     DenseMap<const Instruction *, PointsToRelation *> ain, aout;
     // Liveness information
@@ -369,6 +369,6 @@ void LivenessPointsTo::runOnFunction(Function &F) {
 }
 
 std::set<std::pair<PointsToNode *, PointsToNode *>>*
-LivenessPointsTo::getPointsTo(Instruction &I) const {
+IntraproceduralLivenessPointsTo::getPointsTo(Instruction &I) const {
     return pointsto.find(&I)->second;
 }

@@ -4,7 +4,7 @@
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Transforms/IPO/PassManagerBuilder.h"
 
-#include "include/LivenessPointsTo.h"
+#include "include/IntraproceduralLivenessPointsTo.h"
 
 using namespace llvm;
 
@@ -12,7 +12,7 @@ namespace {
 struct TestPass : public FunctionPass {
     static char ID;
 
-    LivenessPointsTo analysis;
+    IntraproceduralLivenessPointsTo analysis;
 
     TestPass() : FunctionPass(ID) {}
 
@@ -49,5 +49,5 @@ struct TestPass : public FunctionPass {
 };
 
 char TestPass::ID;
-static RegisterPass<TestPass> X("test-pass", "Test pass for LFCPA.");
+static RegisterPass<TestPass> X("intraprocedural-test-pass", "Test pass for intraprocedural LFCPA.");
 }
