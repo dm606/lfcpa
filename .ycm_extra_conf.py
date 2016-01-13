@@ -8,7 +8,6 @@ flags = [
 '-Wextra',
 '-Werror',
 '-fexceptions',
-'-DNDEBUG',
 '-std=c++11',
 '-x',
 'c++',
