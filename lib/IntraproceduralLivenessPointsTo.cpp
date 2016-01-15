@@ -8,23 +8,9 @@
 #include "llvm/IR/Instructions.h"
 #include "llvm/Support/raw_ostream.h"
 
-#include "../include/PointsToNode.h"
+#include "../include/LivenessPointsToMisc.h"
 #include "../include/IntraproceduralLivenessPointsTo.h"
-
-Instruction *getNextInstruction(Instruction *Instr)  {
-    BasicBlock::iterator I(Instr);
-    Instruction *Next = ++I;
-    // There should be at least one more instruction in the basic block.
-    assert(Next != Instr->getParent()->end());
-    return Next;
-}
-
-Instruction *getPreviousInstruction(Instruction *Instr) {
-    BasicBlock::iterator I(Instr);
-    // There should be at least one instruction before Instr.
-    assert (I != Instr->getParent()->begin());
-    return --I;
-}
+#include "../include/PointsToNode.h"
 
 void IntraproceduralLivenessPointsTo::subtractKill(std::set<PointsToNode *> &Lin,
                                     Instruction *I,
