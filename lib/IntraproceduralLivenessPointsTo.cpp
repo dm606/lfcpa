@@ -356,5 +356,7 @@ void IntraproceduralLivenessPointsTo::runOnFunction(Function &F) {
 
 std::set<std::pair<PointsToNode *, PointsToNode *>>*
 IntraproceduralLivenessPointsTo::getPointsTo(Instruction &I) const {
-    return pointsto.find(&I)->second;
+    auto result = pointsto.find(&I);
+    assert (result != pointsto.end() && "The points-to data does not contain an entry for the specified instruction.");
+    return result->second;
 }
