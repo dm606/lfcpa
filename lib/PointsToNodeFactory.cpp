@@ -9,6 +9,7 @@ PointsToNode *PointsToNodeFactory::getUnknown() {
 }
 
 PointsToNode* PointsToNodeFactory::getNode(Value *V) {
+    assert(V != nullptr);
     Value *Stripped = V->stripPointerCasts();
     auto KV = map.find(Stripped);
     if (KV != map.end())
@@ -27,6 +28,17 @@ PointsToNode* PointsToNodeFactory::getAllocaNode(AllocaInst *I) {
     else {
         PointsToNode *Node = PointsToNode::createAlloca(I);
         allocaMap.insert(std::make_pair(I, Node));
+        return Node;
+    }
+}
+
+PointsToNode* PointsToNodeFactory::getGlobalNode(GlobalVariable *V) {
+    auto KV = globalMap.find(V);
+    if (KV != globalMap.end())
+        return KV->second;
+    else {
+        PointsToNode *Node = PointsToNode::createGlobal(V);
+        globalMap.insert(std::make_pair(V, Node));
         return Node;
     }
 }

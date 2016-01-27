@@ -16,8 +16,12 @@ add_definitions(${LLVM_DEFINITIONS})
 
 include_directories(include)
 add_llvm_loadable_module(
-    IntraproceduralTestPass
+    TestPass
     IntraproceduralTestPass.cpp
+    TestPass.cpp
+    lib/CallString.cpp
     lib/IntraproceduralLivenessPointsTo.cpp
+    lib/LivenessPointsTo.cpp
+    lib/PointsToData.cpp
     lib/PointsToNode.cpp
     lib/PointsToNodeFactory.cpp)

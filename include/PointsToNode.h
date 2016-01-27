@@ -2,6 +2,7 @@
 #define LFCPA_POINTSTONODE_H
 
 #include "llvm/ADT/StringRef.h"
+#include "llvm/IR/GlobalVariable.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/Value.h"
 #include "llvm/Support/raw_ostream.h"
@@ -15,13 +16,18 @@ private:
     const Value *value;
     std::string stdName;
     StringRef name;
-    PointsToNode() {
-        stdName = "?";
+    PointsToNode() : value(nullptr), stdName("?") {
         name = StringRef(stdName);
     }
     static PointsToNode *createAlloca(AllocaInst *AI) {
         PointsToNode *result = new PointsToNode();
         result->stdName = "alloca:" + AI->getName().str();
+        result->name = StringRef(result->stdName);
+        return result;
+    }
+    static PointsToNode *createGlobal(GlobalVariable *AI) {
+        PointsToNode *result = new PointsToNode();
+        result->stdName = "global:" + AI->getName().str();
         result->name = StringRef(result->stdName);
         return result;
     }
@@ -32,6 +38,10 @@ public:
             stdName = std::to_string(nextId++);
             name = StringRef(stdName);
         }
+    }
+
+    inline bool isGlobal() const {
+        return value != nullptr && isa<GlobalValue>(value);
     }
 
     StringRef getName() const;
