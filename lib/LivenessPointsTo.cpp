@@ -516,7 +516,11 @@ bool LivenessPointsTo::getCalledFunctionResult(const CallString &CS, Function *F
         return false;
 
     IntraproceduralPointsTo *PT = data.getAtLongestPrefix(F, CS);
-    auto I = PT->find(&*inst_begin(F));
+    if (PT == nullptr)
+        return false;
+    auto FirstInst = inst_begin(F);
+    assert(FirstInst != inst_end(F));
+    auto I = PT->find(&*FirstInst);
     assert(I != PT->end());
     Result.first = *I->second.first;
 
