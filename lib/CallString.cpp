@@ -99,7 +99,7 @@ void CallString::dump() const {
     for (auto &I : nonRecursive) {
         if (!first)
             errs() << ", ";
-        I->dump();
+        I->print(errs());
         first = false;
     }
 
@@ -111,7 +111,7 @@ void CallString::dump() const {
         for (auto &I : recursive) {
             if (!first)
                 errs() << ", ";
-            I->dump();
+            I->print(errs());
             first = false;
         }
         errs() << "]*";
