@@ -84,6 +84,11 @@ IntraproceduralPointsTo *PointsToData::getPointsTo(const CallString &CS, Functio
 bool PointsToData::attemptMakeRecursiveCallString(Function *F, const CallString &CS, IntraproceduralPointsTo *Out) {
     assert(!CS.isRecursive() && "The call string must be non-recursive");
 
+    if (CS.isEmpty())
+        return false;
+
+    auto LastCall = CS.getLastCall();
+
     auto pair = data.find(F);
     assert(pair != data.end());
 
@@ -96,6 +101,10 @@ bool PointsToData::attemptMakeRecursiveCallString(Function *F, const CallString 
     for (; I != E; ++I) {
         auto pair = *I;
         if (!pair.first.isRecursive() &&
+            // FIXME: Maybe call is slightly too specific. What about matching
+            // the called functions? What about not requiring !empty?
+            !pair.first.isEmpty() &&
+            pair.first.getLastCall() == LastCall &&
             CS.isNonRecursivePrefix(pair.first) &&
             arePointsToMapsEqual(F, pair.second, Out)) {
             CallString newCS = CS.createRecursiveFromPrefix(pair.first);

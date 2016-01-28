@@ -807,6 +807,7 @@ bool LivenessPointsTo::runOnFunctionAt(const CallString& CS,
     IntraproceduralPointsTo *Copy = copyPointsToMap(Out);
     SmallVector<std::tuple<CallInst *, Function *, PointsToRelation *, LivenessSet *>, 8> Calls;
     runOnFunction(F, CS, Out, EntryPointsTo, ExitLiveness, Calls);
+
     if (arePointsToMapsEqual(F, Out, Copy)) {
         // If there is a prefix with the same information, then make it
         // recursive. This requires that the information that was just computed
@@ -816,6 +817,7 @@ bool LivenessPointsTo::runOnFunctionAt(const CallString& CS,
         // function do here is guaranteed to be correct (FIXME: Is this true?).
         if (data.attemptMakeRecursiveCallString(F, CS, Out))
             return false;
+
         // If there is no prefix with the same information, then we need to look
         // further down the tree until we reach a leaf or find one, so run the
         // analysis on the callees. The analysis doesn't need to be rerun on the

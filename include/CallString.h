@@ -32,6 +32,12 @@ class CallString {
             assert (!isRecursive());
             return nonRecursive.size();
         }
+
+        inline Instruction *getLastCall() const {
+            assert(!isRecursive());
+            assert(!isEmpty());
+            return nonRecursive.back();
+        }
     private:
         SmallVector<Instruction *, 8> nonRecursive;
         SmallVector<Instruction *, 8> recursive;
