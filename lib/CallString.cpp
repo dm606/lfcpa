@@ -11,18 +11,18 @@ CallString CallString::empty() {
 
 CallString CallString::addCallSite(Instruction *I) const {
     assert(isa<CallInst>(I) && "Only call instructions can be call sites.");
-    assert(!isRecursive() && "Call sites can only be added to non-recursive call instructions.");
+    assert(!isCyclic() && "Call sites can only be added to non-cyclic call instructions.");
     CallString result = *this;
-    result.nonRecursive.push_back(I);
+    result.nonCyclic.push_back(I);
     return result;
 }
 
-bool CallString::isNonRecursivePrefix(const CallString &S) const {
-    assert (!isRecursive() && "Both call strings must be non-recursive.");
-    assert (!S.isRecursive() && "Both call strings must be non-recursive.");
-    auto thisIter = nonRecursive.begin();
-    auto thisEnd = nonRecursive.end();
-    for (auto &I : S.nonRecursive) {
+bool CallString::isNonCyclicPrefix(const CallString &S) const {
+    assert (!isCyclic() && "Both call strings must be non-cyclic.");
+    assert (!S.isCyclic() && "Both call strings must be non-cyclic.");
+    auto thisIter = nonCyclic.begin();
+    auto thisEnd = nonCyclic.end();
+    for (auto &I : S.nonCyclic) {
         if (thisIter == thisEnd) {
             // S is longer!
             return false;
@@ -37,12 +37,12 @@ bool CallString::isNonRecursivePrefix(const CallString &S) const {
     return thisIter != thisEnd;
 }
 
-CallString CallString::createRecursiveFromPrefix(const CallString &S) const {
-    assert (!isRecursive() && "Both call strings must be non-recursive.");
-    assert (!S.isRecursive() && "Both call strings must be non-recursive.");
-    auto thisIter = nonRecursive.begin();
-    auto thisEnd = nonRecursive.end();
-    for (auto &I : S.nonRecursive) {
+CallString CallString::createCyclicFromPrefix(const CallString &S) const {
+    assert (!isCyclic() && "Both call strings must be non-cyclic.");
+    assert (!S.isCyclic() && "Both call strings must be non-cyclic.");
+    auto thisIter = nonCyclic.begin();
+    auto thisEnd = nonCyclic.end();
+    for (auto &I : S.nonCyclic) {
         assert (thisIter != thisEnd && "The prefix is too long.");
         assert (I == *thisIter && "The call string is not a prefix.");
         thisIter++;
@@ -50,16 +50,16 @@ CallString CallString::createRecursiveFromPrefix(const CallString &S) const {
 
     assert(thisIter != thisEnd && "The prefix is too long.");
     CallString result = S;
-    result.recursive = SmallVector<Instruction *, 8>(thisIter, thisEnd);
+    result.cyclic = SmallVector<Instruction *, 8>(thisIter, thisEnd);
     return result;
 }
 
 bool CallString::matches(const CallString &S) const {
-    assert(!S.isRecursive() && "Can only test if non-recursive call-strings match.");
+    assert(!S.isCyclic() && "Can only test if non-cyclic call-strings match.");
 
-    auto iter = S.nonRecursive.begin();
-    auto end = S.nonRecursive.end();
-    for (auto &I : nonRecursive) {
+    auto iter = S.nonCyclic.begin();
+    auto end = S.nonCyclic.end();
+    for (auto &I : nonCyclic) {
         if (iter == end) {
             // S isn't long enough!
             return false;
@@ -72,11 +72,11 @@ bool CallString::matches(const CallString &S) const {
             iter++;
     }
 
-    if (isRecursive()) {
+    if (isCyclic()) {
         while (iter != end) {
-            for (auto &I : recursive) {
+            for (auto &I : cyclic) {
                 if (iter == end) {
-                    // S has an incomplete recursive part at the end.
+                    // S has an incomplete cyclic part at the end.
                     return false;
                 }
                 else if (I != *iter) {
@@ -96,19 +96,19 @@ bool CallString::matches(const CallString &S) const {
 
 void CallString::dump() const {
     bool first = true;
-    for (auto &I : nonRecursive) {
+    for (auto &I : nonCyclic) {
         if (!first)
             errs() << ", ";
         I->print(errs());
         first = false;
     }
 
-    if (isRecursive()) {
+    if (isCyclic()) {
         if (!first)
             errs() << ", ";
         errs() << "[";
         first = true;
-        for (auto &I : recursive) {
+        for (auto &I : cyclic) {
             if (!first)
                 errs() << ", ";
             I->print(errs());

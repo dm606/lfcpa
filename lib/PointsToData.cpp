@@ -56,7 +56,7 @@ IntraproceduralPointsTo *copyPointsToMap(IntraproceduralPointsTo *M) {
 }
 
 IntraproceduralPointsTo *PointsToData::getPointsTo(const CallString &CS, Function *F) {
-    assert (!CS.isRecursive() && "Information has already been computed.");
+    assert (!CS.isCyclic() && "Information has already been computed.");
 
     auto P = data.find(F);
     ProcedurePointsTo *Pointsto;
@@ -68,7 +68,7 @@ IntraproceduralPointsTo *PointsToData::getPointsTo(const CallString &CS, Functio
         Pointsto = P->second;
 
     for (auto P2 : *Pointsto) {
-        assert ((!P2.first.isRecursive() || !P2.first.matches(CS)) && "Information has already been computed");
+        assert ((!P2.first.isCyclic() || !P2.first.matches(CS)) && "Information has already been computed");
         if (CS == P2.first)
             return P2.second;
     }
@@ -81,8 +81,8 @@ IntraproceduralPointsTo *PointsToData::getPointsTo(const CallString &CS, Functio
     return Out;
 }
 
-bool PointsToData::attemptMakeRecursiveCallString(Function *F, const CallString &CS, IntraproceduralPointsTo *Out) {
-    assert(!CS.isRecursive() && "The call string must be non-recursive");
+bool PointsToData::attemptMakeCyclicCallString(Function *F, const CallString &CS, IntraproceduralPointsTo *Out) {
+    assert(!CS.isCyclic() && "The call string must be non-cyclic");
 
     if (CS.isEmpty())
         return false;
@@ -100,14 +100,14 @@ bool PointsToData::attemptMakeRecursiveCallString(Function *F, const CallString 
     auto I = V->begin(), E = V->end();
     for (; I != E; ++I) {
         auto pair = *I;
-        if (!pair.first.isRecursive() &&
+        if (!pair.first.isCyclic() &&
             // FIXME: Maybe call is slightly too specific. What about matching
             // the called functions? What about not requiring !empty?
             !pair.first.isEmpty() &&
             pair.first.getLastCall() == LastCall &&
-            CS.isNonRecursivePrefix(pair.first) &&
+            CS.isNonCyclicPrefix(pair.first) &&
             arePointsToMapsEqual(F, pair.second, Out)) {
-            CallString newCS = CS.createRecursiveFromPrefix(pair.first);
+            CallString newCS = CS.createCyclicFromPrefix(pair.first);
             *I = std::make_pair(newCS, Out);
             break;
         }
@@ -117,7 +117,7 @@ bool PointsToData::attemptMakeRecursiveCallString(Function *F, const CallString 
         CallString R = I->first;
         // Remove all call strings that match the inserted one.
         for (auto I2 = V->begin(); I2 != E; ) {
-            if (I != I2 && !I2->first.isRecursive() && R.matches(I2->first)) {
+            if (I != I2 && !I2->first.isCyclic() && R.matches(I2->first)) {
                 I2=V->erase(I2);
                 E = V->end();
             }
@@ -138,7 +138,7 @@ bool PointsToData::hasDataForFunction(const Function *F) const {
 }
 
 IntraproceduralPointsTo *PointsToData::getAtLongestPrefix(const Function *F, const CallString &CS) const {
-    assert(!CS.isRecursive() && "We can only check against non-recursive call strings.");
+    assert(!CS.isCyclic() && "We can only check against non-cyclic call strings.");
 
     auto I = data.find(F);
     if (I == data.end()) {
@@ -150,7 +150,7 @@ IntraproceduralPointsTo *PointsToData::getAtLongestPrefix(const Function *F, con
     IntraproceduralPointsTo *Result = nullptr;
     int prefixLength = 0;
     for (auto P : *V) {
-        if (P.first.isRecursive()) {
+        if (P.first.isCyclic()) {
             // We only consider exact matches here.
             if (P.first.matches(CS))
                 return P.second;
@@ -160,7 +160,7 @@ IntraproceduralPointsTo *PointsToData::getAtLongestPrefix(const Function *F, con
                 return P.second;
             else {
                 int l = P.first.size();
-                if (l >= prefixLength && CS.isNonRecursivePrefix(P.first)) {
+                if (l >= prefixLength && CS.isNonCyclicPrefix(P.first)) {
                     prefixLength = l;
                     Result = P.second;
                 }

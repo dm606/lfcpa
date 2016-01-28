@@ -10,37 +10,37 @@ class CallString {
     public:
         static CallString empty();
         CallString addCallSite(Instruction *) const;
-        bool isNonRecursivePrefix(const CallString &) const;
-        CallString createRecursiveFromPrefix(const CallString &) const;
+        bool isNonCyclicPrefix(const CallString &) const;
+        CallString createCyclicFromPrefix(const CallString &) const;
         bool matches(const CallString &) const;
-        CallString(const CallString &other) : nonRecursive(other.nonRecursive), recursive(other.recursive) {}
+        CallString(const CallString &other) : nonCyclic(other.nonCyclic), cyclic(other.cyclic) {}
         void dump() const;
 
         inline bool operator==(const CallString &C) const {
-            return C.recursive == recursive && C.nonRecursive == nonRecursive;
+            return C.cyclic == cyclic && C.nonCyclic == nonCyclic;
         }
 
         inline bool isEmpty() const {
-            return recursive.empty() && nonRecursive.empty();
+            return cyclic.empty() && nonCyclic.empty();
         }
 
-        inline bool isRecursive() const {
-            return !recursive.empty();
+        inline bool isCyclic() const {
+            return !cyclic.empty();
         }
 
         inline int size() const {
-            assert (!isRecursive());
-            return nonRecursive.size();
+            assert (!isCyclic());
+            return nonCyclic.size();
         }
 
         inline Instruction *getLastCall() const {
-            assert(!isRecursive());
+            assert(!isCyclic());
             assert(!isEmpty());
-            return nonRecursive.back();
+            return nonCyclic.back();
         }
     private:
-        SmallVector<Instruction *, 8> nonRecursive;
-        SmallVector<Instruction *, 8> recursive;
+        SmallVector<Instruction *, 8> nonCyclic;
+        SmallVector<Instruction *, 8> cyclic;
         CallString () {}
 };
 

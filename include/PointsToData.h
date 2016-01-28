@@ -27,7 +27,7 @@ class PointsToData {
         PointsToData() {}
         ProcedurePointsTo *getAtFunction(Function *) const;
         IntraproceduralPointsTo *getPointsTo(const CallString &, Function *);
-        bool attemptMakeRecursiveCallString(Function *, const CallString &, IntraproceduralPointsTo *);
+        bool attemptMakeCyclicCallString(Function *, const CallString &, IntraproceduralPointsTo *);
         bool hasDataForFunction(const Function *) const;
         IntraproceduralPointsTo *getAtLongestPrefix(const Function *, const CallString &) const;
     private:
