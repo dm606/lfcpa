@@ -52,7 +52,7 @@ struct TestPass : public ModulePass {
                 }
             }
         }
-
+        errs().flush();
         return false;
     }
 };
