@@ -330,11 +330,11 @@ std::pair<PointsToRelation *, LivenessSet *> LivenessPointsTo::getReachable(Func
     // We need to add formal arguments to the result, on only add things that
     // the actual arguments can point to to reachable, and add formal arguments
     // immediately.
-    auto Arg = Callee->arg_begin(), ArgEnd = Callee->arg_end();
+    auto Arg = Callee->arg_begin();
     for (Value *V : CI->arg_operands()) {
         PointsToNode *N = factory.getNode(V);
         // FIXME: What about varargs functions?
-        assert(Arg != ArgEnd && "Argument count mismatch");
+        assert(Arg != Callee->arg_end() && "Argument count mismatch");
         Argument *A = &*Arg;
         PointsToNode *ANode = factory.getNode(A);
         for (auto P : *Ain) {
@@ -384,11 +384,11 @@ void LivenessPointsTo::insertReachable(Function *Callee, CallInst *CI, LivenessS
     // If there is a formal attribute that is live at the beginning of the
     // callee, the corresponding actual arguments is live before the call
     // instruction.
-    auto Arg = Callee->arg_begin(), ArgEnd = Callee->arg_end();
+    auto Arg = Callee->arg_begin();
     for (Value *V : CI->arg_operands()) {
         PointsToNode *Node = factory.getNode(V);
         // FIXME: What about varargs functions?
-        assert(Arg != ArgEnd && "Argument count mismatch");
+        assert(Arg != Callee->arg_end() && "Argument count mismatch");
         Argument *A = &*Arg;
         PointsToNode *ANode = factory.getNode(A);
         if (Lin.find(ANode) != Lin.end())

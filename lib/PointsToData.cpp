@@ -28,7 +28,7 @@ void dumpLivenessSet(const LivenessSet *L) {
 ProcedurePointsTo *PointsToData::getAtFunction(Function *F) const {
     auto result = data.find(F);
     assert (result != data.end() && "The points-to data does not contain an entry for the specified function.");
-    return data.find(F)->second;
+    return result->second;
 }
 
 bool arePointsToMapsEqual(Function *F, IntraproceduralPointsTo *a, IntraproceduralPointsTo *b) {

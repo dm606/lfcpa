@@ -46,6 +46,8 @@ CallString CallString::createCyclicFromPrefix(const CallString &S) const {
         assert (thisIter != thisEnd && "The prefix is too long.");
         assert (I == *thisIter && "The call string is not a prefix.");
         thisIter++;
+        // Supress unused variable warning in non-asserts builds.
+        (void)I;
     }
 
     assert(thisIter != thisEnd && "The prefix is too long.");
