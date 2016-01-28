@@ -608,10 +608,9 @@ void LivenessPointsTo::runOnFunction(Function *F, const CallString &CS, Intrapro
             bool isCallInstLive = instruction_lout->find(CINode) != instruction_lout->end();
             CallString newCS = CS.addCallSite(I);
             Function *Called = CI->getCalledFunction();
-            assert(Called != nullptr && "Only direct calls are supported.");
 
             bool analysed = false;
-            if (!Called->isDeclaration()) {
+            if (Called != nullptr && !Called->isDeclaration()) {
                 // The set of values that are returned from the function.
                 LivenessSet returnValues = getReturnValues(Called);
                 // Add to the list of calls made by the function for analysis later.
