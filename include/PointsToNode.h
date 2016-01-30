@@ -14,26 +14,21 @@ class PointsToNode {
 private:
     static int nextId;
     const Value *value;
-    std::string stdName;
     StringRef name;
+    std::string stdName;
     PointsToNode() : value(nullptr), stdName("?"), isAlloca(false) {
         name = StringRef(stdName);
     }
-    PointsToNode(bool isAlloca) : isAlloca(isAlloca) {}
     PointsToNode(std::string stdName, bool isAlloca) : value(nullptr), stdName(stdName), isAlloca(isAlloca) {
-        name = StringRef(stdName);
+        // Note that stdName.data can be destroyed, so since the StringRef
+        // copies a pointer to it, this->stdName *must* be used.
+        name = StringRef(this->stdName);
     }
     static PointsToNode *createAlloca(AllocaInst *AI) {
-        PointsToNode *result = new PointsToNode(true);
-        result->stdName = "alloca:" + AI->getName().str();
-        result->name = StringRef(result->stdName);
-        return result;
+        return new PointsToNode("alloca:" + AI->getName().str(), true);
     }
     static PointsToNode *createGlobal(GlobalVariable *AI) {
-        PointsToNode *result = new PointsToNode(false);
-        result->stdName = "global:" + AI->getName().str();
-        result->name = StringRef(result->stdName);
-        return result;
+        return new PointsToNode("global:" + AI->getName().str(), false);
     }
 public:
     const bool isAlloca;
@@ -53,7 +48,9 @@ public:
         return value != nullptr && (isa<User>(value) || isa<Argument>(value));
     }
 
-    StringRef getName() const;
+    inline StringRef getName() const {
+        return name;
+    }
 };
 
 #endif
