@@ -311,10 +311,10 @@ bool LivenessPointsTo::computeAin(Instruction *I, Function *F, PointsToRelation 
 }
 
 LivenessSet *LivenessPointsTo::getReachable(Function *Callee, CallInst *CI, PointsToRelation *Aout, LivenessSet *Lout) {
-    // FIXME: Do we need to look a return values here?  This is roughly the mark
-    // phase from mark-and-sweep garbage collection. We begin with the roots,
-    // which are the arguments of the function, return values and global
-    // variables, then determine what is reachable using the points-to relation.
+    // This is roughly the mark phase from mark-and-sweep garbage collection. We
+    // begin with the roots, which are the arguments of the function, return
+    // values and global variables, then determine what is reachable using the
+    // points-to relation.
     LivenessSet reachable;
     bool isCallInstLive = Lout->find(factory.getNode(CI)) != Lout->end();
 
@@ -349,11 +349,9 @@ LivenessSet *LivenessPointsTo::getReachable(Function *Callee, CallInst *CI, Poin
     }
 
     // Return values
-    if (isCallInstLive) {
-        for (PointsToNode *N : getReturnValues(Callee)) {
+    if (isCallInstLive)
+        for (PointsToNode *N : getReturnValues(Callee))
             insertReachable(N);
-        }
-    }
 
     // Then add all of the relevant globals.
     for (auto P : *Aout)
@@ -418,7 +416,6 @@ PointsToRelation * LivenessPointsTo::getReachablePT(Function *Callee, CallInst *
 }
 
 void LivenessPointsTo::insertReachable(Function *Callee, CallInst *CI, LivenessSet &N, LivenessSet &Lin, PointsToRelation *Ain) {
-    // FIXME: Do we need to look at return values here?
     // This is roughly the mark phase from mark-and-sweep garbage collection. We
     // begin with the roots, which are the arguments of the function and global
     // variables, then determine what is reachable using the points-to relation.
@@ -464,11 +461,10 @@ void LivenessPointsTo::insertReachable(Function *Callee, CallInst *CI, LivenessS
 }
 
 void LivenessPointsTo::insertReachableDeclaration(CallInst *CI, LivenessSet &N, PointsToRelation *Ain) {
-    // FIXME: Do we need to look at return values here? Can globals be accessed
-    // by the function?
-    // This is roughly the mark phase from mark-and-sweep garbage collection. We
-    // begin with the roots, which are the arguments of the function,  then
-    // determine what is reachable using the points-to relation.
+    // Can globals be accessed by the function?  This is roughly the mark phase
+    // from mark-and-sweep garbage collection. We begin with the roots, which
+    // are the arguments of the function,  then determine what is reachable
+    // using the points-to relation.
     LivenessSet reachable;
 
     std::function<void(PointsToNode *)> insertReachable = [&](PointsToNode *N) {
