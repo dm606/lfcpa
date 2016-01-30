@@ -4,7 +4,7 @@
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/IR/Value.h"
 
-#include "PointsToNodeFactory.h"
+#include "PointsToNode.h"
 
 class PointsToNodeFactory {
     private:

@@ -39,7 +39,8 @@ private:
                                   std::set<PointsToNode *> *);
     void computeLout(Instruction *, LivenessSet * , IntraproceduralPointsTo *, PointsToRelation *, bool);
     bool computeAin(Instruction *, Function *, PointsToRelation *, LivenessSet *, IntraproceduralPointsTo *);
-    std::pair<PointsToRelation *, LivenessSet*> getReachable(Function *, CallInst *, PointsToRelation *, LivenessSet *);
+    LivenessSet* getReachable(Function *, CallInst *, PointsToRelation *, LivenessSet *);
+    PointsToRelation * getReachablePT(Function *, CallInst *, PointsToRelation *);
     void insertReachable(Function *, CallInst *, LivenessSet &, LivenessSet &, PointsToRelation *);
     void insertReachableDeclaration(CallInst *, LivenessSet &, PointsToRelation *);
     void insertReachablePT(CallInst *, PointsToRelation &, PointsToRelation &, PointsToRelation *, LivenessSet &);

@@ -310,7 +310,67 @@ bool LivenessPointsTo::computeAin(Instruction *I, Function *F, PointsToRelation 
     return false;
 }
 
-std::pair<PointsToRelation *, LivenessSet *> LivenessPointsTo::getReachable(Function *Callee, CallInst *CI, PointsToRelation *Ain, LivenessSet *Lout) {
+LivenessSet *LivenessPointsTo::getReachable(Function *Callee, CallInst *CI, PointsToRelation *Aout, LivenessSet *Lout) {
+    // FIXME: Do we need to look a return values here?  This is roughly the mark
+    // phase from mark-and-sweep garbage collection. We begin with the roots,
+    // which are the arguments of the function, return values and global
+    // variables, then determine what is reachable using the points-to relation.
+    LivenessSet reachable;
+    bool isCallInstLive = Lout->find(factory.getNode(CI)) != Lout->end();
+
+    std::function<void(PointsToNode *)> insertReachable = [&](PointsToNode *N) {
+        if (reachable.insert(N).second) {
+            for (auto P : *Aout)
+                if (P.first == N)
+                    insertReachable(P.second);
+        }
+    };
+
+    LivenessSet *L = new LivenessSet();
+
+    // We need to add formal arguments to the result, on only add things that
+    // the actual arguments can point to to reachable, and add formal arguments
+    // immediately.
+    auto Arg = Callee->arg_begin();
+    for (Value *V : CI->arg_operands()) {
+        PointsToNode *N = factory.getNode(V);
+        // FIXME: What about varargs functions?
+        assert(Arg != Callee->arg_end() && "Argument count mismatch");
+        Argument *A = &*Arg;
+        PointsToNode *ANode = factory.getNode(A);
+        for (auto P : *Aout) {
+            if (P.first == N) {
+                insertReachable(P.second);
+            }
+        }
+        if (Lout->find(N) != Lout->end())
+            L->insert(ANode);
+        ++Arg;
+    }
+
+    // Return values
+    if (isCallInstLive) {
+        for (PointsToNode *N : getReturnValues(Callee)) {
+            insertReachable(N);
+        }
+    }
+
+    // Then add all of the relevant globals.
+    for (auto P : *Aout)
+        if (P.first->isGlobal())
+            insertReachable(P.first);
+    for (auto N : *Lout)
+        if (N->isGlobal())
+            insertReachable(N);
+
+    for (auto N : *Lout)
+        if (reachable.find(N) != reachable.end())
+            L->insert(N);
+
+    return L;
+}
+
+PointsToRelation * LivenessPointsTo::getReachablePT(Function *Callee, CallInst *CI, PointsToRelation *Ain) {
     // This is roughly the mark phase from mark-and-sweep garbage collection. We
     // begin with the roots, which are the arguments of the function and global
     // variables, then determine what is reachable using the points-to relation.
@@ -325,9 +385,8 @@ std::pair<PointsToRelation *, LivenessSet *> LivenessPointsTo::getReachable(Func
     };
 
     PointsToRelation *PT = new PointsToRelation();
-    LivenessSet *L = new LivenessSet();
 
-    // We need to add formal arguments to the result, on only add things that
+    // We need to add formal arguments to the result, or only add things that
     // the actual arguments can point to to reachable, and add formal arguments
     // immediately.
     auto Arg = Callee->arg_begin();
@@ -343,8 +402,6 @@ std::pair<PointsToRelation *, LivenessSet *> LivenessPointsTo::getReachable(Func
                 PT->insert(std::make_pair(ANode, P.second));
             }
         }
-        if (Lout->find(N) != Lout->end())
-            L->insert(ANode);
         ++Arg;
     }
 
@@ -352,18 +409,12 @@ std::pair<PointsToRelation *, LivenessSet *> LivenessPointsTo::getReachable(Func
     for (auto P : *Ain)
         if (P.first->isGlobal())
             insertReachable(P.first);
-    for (auto N : *Lout)
-        if (N->isGlobal())
-            insertReachable(N);
 
     for (auto P : *Ain)
         if (reachable.find(P.first) != reachable.end())
             PT->insert(P);
-    for (auto N : *Lout)
-        if (reachable.find(N) != reachable.end())
-            L->insert(N);
 
-    return std::make_pair(PT, L);
+    return PT;
 }
 
 void LivenessPointsTo::insertReachable(Function *Callee, CallInst *CI, LivenessSet &N, LivenessSet &Lin, PointsToRelation *Ain) {
@@ -605,7 +656,6 @@ void LivenessPointsTo::runOnFunction(Function *F, const CallString &CS, Intrapro
 
         if (CallInst *CI = dyn_cast<CallInst>(I)) {
             PointsToNode *CINode = factory.getNode(CI);
-            bool isCallInstLive = instruction_lout->find(CINode) != instruction_lout->end();
             CallString newCS = CS.addCallSite(I);
             Function *Called = CI->getCalledFunction();
 
@@ -614,14 +664,8 @@ void LivenessPointsTo::runOnFunction(Function *F, const CallString &CS, Intrapro
                 // The set of values that are returned from the function.
                 LivenessSet returnValues = getReturnValues(Called);
                 // Add to the list of calls made by the function for analysis later.
-                auto boundaryInformation = getReachable(Called, CI, instruction_ain, instruction_lout);
-                auto EntryPT = boundaryInformation.first;
-                auto ExitL = boundaryInformation.second;
-                // If the call instruction is live, the values that can be
-                // returned by the function are.
-                if (isCallInstLive)
-                    ExitL->insert(returnValues.begin(), returnValues.end());
-
+                auto EntryPT = getReachablePT(Called, CI, instruction_ain);
+                auto ExitL = getReachable(Called, CI, instruction_aout, instruction_lout);
                 bool found = false;
                 for (auto I = Calls.begin(), E = Calls.end(); I != E; ++I) {
                     CallInst *TupleCI;
@@ -646,10 +690,15 @@ void LivenessPointsTo::runOnFunction(Function *F, const CallString &CS, Intrapro
                     auto calledFunctionAout = calledFunctionResult.second;
 
                     // The set of nodes that are live after the call executes,
-                    // but cannot possibly have been killed by the call.
+                    // but cannot possibly have been killed by the call. Note
+                    // that we also include escaping locals here since in
+                    // recursive procedure there can be multiple instances of
+                    // the "same" local, and killing one should not kill
+                    // another. This in imprecise, but it keeps the lattice of
+                    // dataflow information finite.
                     LivenessSet survivesCall;
                     for (auto N : *instruction_lout)
-                        if (N != CINode && ExitL->find(N) == ExitL->end())
+                        if ((N != CINode && ExitL->find(N) == ExitL->end()) || N->isAlloca || N->multipleStackFrames())
                             survivesCall.insert(N);
 
                     // Compute lin for the current instruction. A live variable
