@@ -952,6 +952,7 @@ void LivenessPointsTo::runOnModule(Module &M) {
                 }
             }
 
+            (void)found;
             assert(found && "Didn't find the result of the analysis on F.");
         }
     }
