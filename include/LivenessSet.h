@@ -8,16 +8,18 @@
 class LivenessSet {
     public:
         typedef std::set<PointsToNode *>::iterator iterator;
+        typedef std::set<PointsToNode *>::const_iterator const_iterator;
+        typedef std::set<PointsToNode *>::size_type size_type;
 
-        inline std::set<PointsToNode *>::const_iterator begin() const {
+        inline const_iterator begin() const {
             return s.begin();
         }
 
-        inline std::set<PointsToNode *>::const_iterator find(PointsToNode *N) const {
+        inline const_iterator find(PointsToNode *N) const {
             return s.find(N);
         }
 
-        inline std::set<PointsToNode *>::const_iterator end() const {
+        inline const_iterator end() const {
             return s.end();
         }
 
@@ -33,7 +35,7 @@ class LivenessSet {
             s.clear();
         }
 
-        inline std::set<PointsToNode *>::size_type erase(PointsToNode *N) {
+        inline size_type erase(PointsToNode *N) {
             return s.erase(N);
         }
 
