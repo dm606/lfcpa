@@ -14,7 +14,7 @@ class PointsToNodeFactory {
         PointsToNode unknown;
     public:
         PointsToNode *getUnknown();
-        PointsToNode *getNode(Value *);
+        PointsToNode *getNode(const Value *);
         PointsToNode *getAllocaNode(AllocaInst *);
         PointsToNode *getGlobalNode(GlobalVariable *);
 };

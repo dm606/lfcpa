@@ -16,6 +16,7 @@ class LivenessPointsTo {
 public:
     void runOnModule(Module &);
     ProcedurePointsTo *getPointsTo(Function &) const;
+    LivenessSet getPointsToSet(const Value *);
 private:
     std::set<PointsToNode *> getRestrictedDef(Instruction *,
                                               PointsToRelation *,
@@ -50,9 +51,11 @@ private:
     bool runOnFunctionAt(const CallString &, Function *, PointsToRelation *, LivenessSet *);
     void addNotInvalidatedRestricted(PointsToRelation &, PointsToRelation *, CallInst *, std::set<PointsToNode *>*);
     std::set<PointsToNode *> getInvalidatedNodes(PointsToRelation *, CallInst *);
+    void addToLivenessSets(const Function& F, IntraproceduralPointsTo *PT);
     PointsToData data;
     PointsToNodeFactory factory;
     LivenessSet globals;
+    DenseMap<PointsToNode *, LivenessSet *> pointsToSets;
 };
 
 #endif

@@ -32,7 +32,7 @@ private:
     }
 public:
     const bool isAlloca;
-    PointsToNode (Value *value) : value(value), isAlloca(false) {
+    PointsToNode (const Value *value) : value(value), isAlloca(false) {
         name = value->getName();
         if (name == "") {
             stdName = std::to_string(nextId++);

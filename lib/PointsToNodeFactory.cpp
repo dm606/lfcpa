@@ -8,9 +8,9 @@ PointsToNode *PointsToNodeFactory::getUnknown() {
     return &unknown;
 }
 
-PointsToNode* PointsToNodeFactory::getNode(Value *V) {
+PointsToNode* PointsToNodeFactory::getNode(const Value *V) {
     assert(V != nullptr);
-    Value *Stripped = V->stripPointerCasts();
+    const Value *Stripped = V->stripPointerCasts();
     auto KV = map.find(Stripped);
     if (KV != map.end())
         return KV->second;

@@ -21,6 +21,7 @@ add_llvm_loadable_module(
     TestPass.cpp
     lib/CallString.cpp
     lib/IntraproceduralLivenessPointsTo.cpp
+    lib/LivenessBasedAA.cpp
     lib/LivenessPointsTo.cpp
     lib/PointsToData.cpp
     lib/PointsToNode.cpp

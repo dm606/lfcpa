@@ -14,6 +14,14 @@
 #include "../include/PointsToData.h"
 #include "../include/PointsToNode.h"
 
+LivenessSet LivenessPointsTo::getPointsToSet(const Value *V) {
+    PointsToNode *N = factory.getNode(V);
+    auto P = pointsToSets.find(N);
+    if (P == pointsToSets.end())
+        return LivenessSet();
+    return *P->second;
+}
+
 void LivenessPointsTo::subtractKill(std::set<PointsToNode *> &Lin,
                                     Instruction *I,
                                     PointsToRelation *Ain) {
@@ -894,6 +902,29 @@ bool LivenessPointsTo::runOnFunctionAt(const CallString& CS,
     }
 }
 
+void LivenessPointsTo::addToLivenessSets(const Function& F, IntraproceduralPointsTo *PT) {
+    PointsToNode *unknown = factory.getUnknown();
+    for (auto I = inst_begin(F), E = inst_end(F); I != E; ++I) {
+        auto P = PT->find(&*I);
+        assert(P != PT->end());
+        PointsToRelation *R = P->second.second;
+        for (std::pair<PointsToNode *, PointsToNode *> p : *R) {
+            if (p.first != unknown && p.second != unknown) {
+                auto Set = pointsToSets.find(p.first);
+                LivenessSet *S = nullptr;
+                if (Set == pointsToSets.end()) {
+                    S = new LivenessSet();
+                    pointsToSets.insert(std::make_pair(p.first, S));
+                }
+                else
+                    S = Set->second;
+
+                S->insert(p.second);
+            }
+        }
+    }
+}
+
 void LivenessPointsTo::runOnModule(Module &M) {
     globals.clear();
     // We assume that globals point to a fixed location.
@@ -912,6 +943,18 @@ void LivenessPointsTo::runOnModule(Module &M) {
             // know what they can point to here, we pass nullptr and work out
             // the correct set during the analysis.
             runOnFunctionAt(CallString::empty(), &F, PT, nullptr);
+
+            ProcedurePointsTo *P = data.getAtFunction(&F);
+            bool found = false;
+            for (auto p : *P) {
+                if (p.first == CallString::empty()) {
+                    addToLivenessSets(F, p.second);
+                    found = true;
+                    break;
+                }
+            }
+
+            assert(found && "Didn't find the result of the analysis on F.");
         }
     }
 }
