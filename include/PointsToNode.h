@@ -16,23 +16,24 @@ private:
     const Value *value;
     StringRef name;
     std::string stdName;
-    PointsToNode() : value(nullptr), stdName("?"), isAlloca(false), isUnknown(true) {
+    PointsToNode() : value(nullptr), stdName("?"), isAlloca(false), isUnknown(true), isPointerType(false) {
         name = StringRef(stdName);
     }
-    PointsToNode(std::string stdName, bool isAlloca) : value(nullptr), stdName(stdName), isAlloca(isAlloca), isUnknown(false) {
+    PointsToNode(std::string stdName, bool isAlloca, bool isPointerType) : value(nullptr), stdName(stdName), isAlloca(isAlloca), isUnknown(false), isPointerType(isPointerType) {
         // Note that stdName.data can be destroyed, so since the StringRef
         // copies a pointer to it, this->stdName *must* be used.
         name = StringRef(this->stdName);
     }
     static PointsToNode *createAlloca(AllocaInst *AI) {
-        return new PointsToNode("alloca:" + AI->getName().str(), true);
+        return new PointsToNode("alloca:" + AI->getName().str(), true, AI->getAllocatedType()->isPointerTy());
     }
     static PointsToNode *createGlobal(GlobalVariable *AI) {
-        return new PointsToNode("global:" + AI->getName().str(), false);
+        return new PointsToNode("global:" + AI->getName().str(), false, AI->getValueType()->isPointerTy());
     }
+
 public:
-    const bool isAlloca, isUnknown;
-    PointsToNode (const Value *value) : value(value), isAlloca(false), isUnknown(false) {
+    const bool isAlloca, isUnknown, isPointerType;
+    PointsToNode (const Value *value) : value(value), isAlloca(false), isUnknown(false), isPointerType(value->getType()->isPointerTy()) {
         name = value->getName();
         if (name == "") {
             stdName = std::to_string(nextId++);
