@@ -5,6 +5,7 @@
 #include "llvm/Support/raw_ostream.h"
 
 #include "../include/LivenessPointsTo.h"
+#include "../include/LivenessSet.h"
 
 using namespace llvm;
 

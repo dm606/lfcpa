@@ -16,10 +16,10 @@ private:
     const Value *value;
     StringRef name;
     std::string stdName;
-    PointsToNode() : value(nullptr), stdName("?"), isAlloca(false) {
+    PointsToNode() : value(nullptr), stdName("?"), isAlloca(false), isUnknown(true) {
         name = StringRef(stdName);
     }
-    PointsToNode(std::string stdName, bool isAlloca) : value(nullptr), stdName(stdName), isAlloca(isAlloca) {
+    PointsToNode(std::string stdName, bool isAlloca) : value(nullptr), stdName(stdName), isAlloca(isAlloca), isUnknown(false) {
         // Note that stdName.data can be destroyed, so since the StringRef
         // copies a pointer to it, this->stdName *must* be used.
         name = StringRef(this->stdName);
@@ -31,8 +31,8 @@ private:
         return new PointsToNode("global:" + AI->getName().str(), false);
     }
 public:
-    const bool isAlloca;
-    PointsToNode (const Value *value) : value(value), isAlloca(false) {
+    const bool isAlloca, isUnknown;
+    PointsToNode (const Value *value) : value(value), isAlloca(false), isUnknown(false) {
         name = value->getName();
         if (name == "") {
             stdName = std::to_string(nextId++);

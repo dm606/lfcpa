@@ -22,7 +22,7 @@ LivenessSet LivenessPointsTo::getPointsToSet(const Value *V) {
     return *P->second;
 }
 
-void LivenessPointsTo::subtractKill(std::set<PointsToNode *> &Lin,
+void LivenessPointsTo::subtractKill(LivenessSet &Lin,
                                     Instruction *I,
                                     PointsToRelation *Ain) {
     Lin.erase(factory.getNode(I));
@@ -63,9 +63,9 @@ void LivenessPointsTo::subtractKill(std::set<PointsToNode *> &Lin,
     }
 }
 
-void LivenessPointsTo::unionRef(std::set<PointsToNode *>& Lin,
+void LivenessPointsTo::unionRef(LivenessSet& Lin,
                                 Instruction *I,
-                                std::set<PointsToNode *>* Lout,
+                                LivenessSet* Lout,
                                 PointsToRelation* Ain) {
     if (LoadInst *LI = dyn_cast<LoadInst>(I)) {
         // We only consider the pointer and the possible values in memory to be
@@ -113,17 +113,16 @@ void LivenessPointsTo::unionRef(std::set<PointsToNode *>& Lin,
 
 void LivenessPointsTo::unionRelationRestriction(PointsToRelation &Result,
                                                 PointsToRelation *Aout,
-                                                std::set<PointsToNode *> *Lin) {
+                                                LivenessSet *Lin) {
     for (auto &P : *Aout)
         if (Lin->find(P.first) != Lin->end())
             Result.insert(P);
 }
 
-std::set<PointsToNode *>
-LivenessPointsTo::getRestrictedDef(Instruction *I,
-                                   PointsToRelation *Ain,
-                                   std::set<PointsToNode *> *Lout) {
-    std::set<PointsToNode *> s;
+LivenessSet LivenessPointsTo::getRestrictedDef(Instruction *I,
+                                               PointsToRelation *Ain,
+                                               LivenessSet *Lout) {
+    LivenessSet s;
     if (StoreInst *SI = dyn_cast<StoreInst>(I)) {
         Value *Ptr = SI->getPointerOperand();
         PointsToNode *PtrNode = factory.getNode(Ptr);
@@ -151,7 +150,7 @@ LivenessPointsTo::getRestrictedDef(Instruction *I,
     return s;
 }
 
-void LivenessPointsTo::insertPointedToBy(std::set<PointsToNode *> &S,
+void LivenessPointsTo::insertPointedToBy(LivenessSet &S,
                                          Value *V,
                                          PointsToRelation *Ain) {
     PointsToNode *VNode = factory.getNode(V);
@@ -160,9 +159,8 @@ void LivenessPointsTo::insertPointedToBy(std::set<PointsToNode *> &S,
             S.insert(P.second);
 }
 
-std::set<PointsToNode *> LivenessPointsTo::getPointee(Instruction *I,
-                                                      PointsToRelation *Ain) {
-    std::set<PointsToNode *> s;
+LivenessSet LivenessPointsTo::getPointee(Instruction *I, PointsToRelation *Ain) {
+    LivenessSet s;
     if (LoadInst *LI = dyn_cast<LoadInst>(I)) {
         Value *Ptr = LI->getPointerOperand();
         PointsToNode *PtrNode = factory.getNode(Ptr);
@@ -200,8 +198,8 @@ std::set<PointsToNode *> LivenessPointsTo::getPointee(Instruction *I,
 }
 
 void LivenessPointsTo::unionCrossProduct(PointsToRelation &Result,
-                                         std::set<PointsToNode *> &A,
-                                         std::set<PointsToNode *> &B) {
+                                         LivenessSet &A,
+                                         LivenessSet &B) {
     for (auto &X : A)
         for (auto &Y : B)
             Result.insert(std::make_pair(X, Y));
@@ -228,7 +226,7 @@ void LivenessPointsTo::computeLout(Instruction *I, LivenessSet* Lout, Intraproce
         // be updated in this case.
         if (insertGlobals) {
             std::function<void(PointsToNode *)> insertReachable = [&](PointsToNode *N) {
-                if (Lout->insert(N).second) {
+                if (Lout->insert(N)) {
                     for (auto P : *Aout)
                         if (P.first == N)
                             insertReachable(P.second);
@@ -327,7 +325,7 @@ LivenessSet *LivenessPointsTo::getReachable(Function *Callee, CallInst *CI, Poin
     bool isCallInstLive = Lout->find(factory.getNode(CI)) != Lout->end();
 
     std::function<void(PointsToNode *)> insertReachable = [&](PointsToNode *N) {
-        if (reachable.insert(N).second) {
+        if (reachable.insert(N)) {
             for (auto P : *Aout)
                 if (P.first == N)
                     insertReachable(P.second);
@@ -383,7 +381,7 @@ PointsToRelation * LivenessPointsTo::getReachablePT(Function *Callee, CallInst *
     LivenessSet reachable;
 
     std::function<void(PointsToNode *)> insertReachable = [&](PointsToNode *N) {
-        if (reachable.insert(N).second) {
+        if (reachable.insert(N)) {
             for (auto P : *Ain)
                 if (P.first == N)
                     insertReachable(P.second);
@@ -430,7 +428,7 @@ void LivenessPointsTo::insertReachable(Function *Callee, CallInst *CI, LivenessS
     LivenessSet reachable;
 
     std::function<void(PointsToNode *)> insertReachable = [&](PointsToNode *N) {
-        if (reachable.insert(N).second) {
+        if (reachable.insert(N)) {
             for (auto P : *Ain)
                 if (P.first == N)
                     insertReachable(P.second);
@@ -476,7 +474,7 @@ void LivenessPointsTo::insertReachableDeclaration(CallInst *CI, LivenessSet &N, 
     LivenessSet reachable;
 
     std::function<void(PointsToNode *)> insertReachable = [&](PointsToNode *N) {
-        if (reachable.insert(N).second) {
+        if (reachable.insert(N)) {
             for (auto P : *Ain)
                 if (P.first == N)
                     insertReachable(P.second);
@@ -494,7 +492,7 @@ void LivenessPointsTo::insertReachablePT(CallInst *CI, PointsToRelation &N, Poin
     LivenessSet reachable;
 
     std::function<void(PointsToNode *)> insertReachable = [&](PointsToNode *N) {
-        if (reachable.insert(N).second) {
+        if (reachable.insert(N)) {
             for (auto P : *Ain)
                 if (P.first == N)
                     insertReachable(P.second);
@@ -788,7 +786,7 @@ void LivenessPointsTo::runOnFunction(Function *F, const CallString &CS, Intrapro
         }
         else {
             // Compute lin for the current instruction.
-            std::set<PointsToNode *> n;
+            LivenessSet n;
             n.insert(instruction_lout->begin(), instruction_lout->end());
             subtractKill(n, I, instruction_ain);
             unionRef(n, I, instruction_lout, instruction_ain);
@@ -805,12 +803,12 @@ void LivenessPointsTo::runOnFunction(Function *F, const CallString &CS, Intrapro
 
             PointsToRelation s;
             // Compute aout for the current instruction.
-            std::set<PointsToNode *> notKilled = *instruction_lout;
+            LivenessSet notKilled = *instruction_lout;
             subtractKill(notKilled, I, instruction_ain);
             unionRelationRestriction(s, instruction_ain, &notKilled);
-            std::set<PointsToNode *> def =
+            LivenessSet def =
                 getRestrictedDef(I, instruction_ain, instruction_lout);
-            std::set<PointsToNode *> pointee = getPointee(I, instruction_ain);
+            LivenessSet pointee = getPointee(I, instruction_ain);
             unionCrossProduct(s, def, pointee);
             if (s != *instruction_aout) {
                 instruction_aout->clear();

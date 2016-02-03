@@ -7,12 +7,12 @@
 #include "llvm/IR/Function.h"
 
 #include "CallString.h"
+#include "LivenessSet.h"
 #include "PointsToNode.h"
 
 using namespace llvm;
 
 typedef std::set<std::pair<PointsToNode *, PointsToNode *>> PointsToRelation;
-typedef std::set<PointsToNode *> LivenessSet;
 typedef DenseMap<const Instruction *, std::pair<LivenessSet *, PointsToRelation *>> IntraproceduralPointsTo;
 typedef SmallVector<std::pair<CallString, IntraproceduralPointsTo *>, 8> ProcedurePointsTo;
 
