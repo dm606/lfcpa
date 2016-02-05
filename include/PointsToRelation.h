@@ -24,7 +24,7 @@ class PointsToRelation {
         }
 
         inline bool insert(const std::pair<PointsToNode *, PointsToNode *> &N) {
-            if (N.first->isUnknown || !N.first->isPointerType)
+            if (isa<UnknownPointsToNode>(N.first) || !N.first->hasPointerType())
                 return false;
 
             return s.insert(N).second;

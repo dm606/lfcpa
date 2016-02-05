@@ -11,7 +11,7 @@ class PointsToNodeFactory {
         DenseMap<const Value *, PointsToNode *> map;
         DenseMap<const AllocaInst *, PointsToNode *> allocaMap;
         DenseMap<const GlobalVariable *, PointsToNode *> globalMap;
-        PointsToNode unknown;
+        UnknownPointsToNode unknown;
     public:
         PointsToNode *getUnknown();
         PointsToNode *getNode(const Value *);

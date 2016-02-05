@@ -40,7 +40,7 @@ class LivenessSet {
         }
 
         inline bool insert(PointsToNode *N) {
-            if (N->isUnknown)
+            if (isa<UnknownPointsToNode>(N))
                 return false;
 
             return s.insert(N).second;

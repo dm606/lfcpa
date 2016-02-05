@@ -361,10 +361,10 @@ LivenessSet *LivenessPointsTo::getReachable(Function *Callee, CallInst *CI, Poin
 
     // Then add all of the relevant globals.
     for (auto P : *Aout)
-        if (P.first->isGlobal())
+        if (P.first->isGlobalAddress())
             insertReachable(P.first);
     for (auto N : *Lout)
-        if (N->isGlobal())
+        if (N->isGlobalAddress())
             insertReachable(N);
 
     for (auto N : *Lout)
@@ -411,7 +411,7 @@ PointsToRelation * LivenessPointsTo::getReachablePT(Function *Callee, CallInst *
 
     // Then add all of the relevant globals.
     for (auto P : *Ain)
-        if (P.first->isGlobal())
+        if (P.first->isGlobalAddress())
             insertReachable(P.first);
 
     for (auto P : *Ain)
@@ -454,10 +454,10 @@ void LivenessPointsTo::insertReachable(Function *Callee, CallInst *CI, LivenessS
     }
     // Then add all of the relevant globals.
     for (auto P : *Ain)
-        if (P.first->isGlobal())
+        if (P.first->isGlobalAddress())
             insertReachable(P.first);
     for (auto N : Lin)
-        if (N->isGlobal())
+        if (N->isGlobalAddress())
             insertReachable(N);
 
     // We now determine which live variables are relevant.
@@ -547,10 +547,10 @@ void LivenessPointsTo::insertReachablePT(CallInst *CI, PointsToRelation &N, Poin
             insertReachable(P.second);
     // Globals are roots.
     for (auto P : *Ain)
-        if (P.first->isGlobal())
+        if (P.first->isGlobalAddress())
             insertReachable(P.first);
     for (auto N : Aout)
-        if (N.first->isGlobal())
+        if (N.first->isGlobalAddress())
             insertReachable(N.first);
 
     // We now determine which pairs are relevant.
@@ -700,7 +700,7 @@ void LivenessPointsTo::runOnFunction(Function *F, const CallString &CS, Intrapro
                     // dataflow information finite.
                     LivenessSet survivesCall;
                     for (auto N : *instruction_lout)
-                        if ((N != CINode && ExitL->find(N) == ExitL->end()) || N->isAlloca || N->multipleStackFrames())
+                        if ((N != CINode && ExitL->find(N) == ExitL->end()) || isa<AllocaPointsToNode>(N) || N->multipleStackFrames())
                             survivesCall.insert(N);
 
                     // Compute lin for the current instruction. A live variable
