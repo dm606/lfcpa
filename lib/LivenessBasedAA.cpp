@@ -44,9 +44,6 @@ struct LivenessBasedAA : public ModulePass, public AliasAnalysis {
         if (ASet.empty() || BSet.empty())
             return AliasAnalysis::alias(LocA, LocB);
 
-        if (ASet.size() == 1 && BSet.size() == 1 && ASet == BSet)
-            return MustAlias;
-
         for (PointsToNode *N : ASet)
             if (BSet.find(N) != BSet.end())
                 return AliasAnalysis::alias(LocA, LocB);
