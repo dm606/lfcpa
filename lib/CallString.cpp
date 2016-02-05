@@ -3,7 +3,7 @@
 #include "llvm/IR/Instructions.h"
 #include "llvm/Support/raw_ostream.h"
 
-#include "../include/CallString.h"
+#include "CallString.h"
 
 CallString CallString::empty() {
     return CallString();

@@ -1,8 +1,8 @@
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/Value.h"
 
-#include "../include/PointsToNode.h"
-#include "../include/PointsToNodeFactory.h"
+#include "PointsToNode.h"
+#include "PointsToNodeFactory.h"
 
 PointsToNode *PointsToNodeFactory::getUnknown() {
     return &unknown;

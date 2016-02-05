@@ -1,3 +1,3 @@
-#include "../include/PointsToNode.h"
+#include "PointsToNode.h"
 
 int PointsToNode::nextId = 0;

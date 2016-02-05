@@ -9,10 +9,10 @@
 #include "llvm/IR/Instructions.h"
 #include "llvm/Support/raw_ostream.h"
 
-#include "../include/LivenessPointsToMisc.h"
-#include "../include/LivenessPointsTo.h"
-#include "../include/PointsToData.h"
-#include "../include/PointsToNode.h"
+#include "LivenessPointsToMisc.h"
+#include "LivenessPointsTo.h"
+#include "PointsToData.h"
+#include "PointsToNode.h"
 
 LivenessSet LivenessPointsTo::getPointsToSet(const Value *V) {
     PointsToNode *N = factory.getNode(V);

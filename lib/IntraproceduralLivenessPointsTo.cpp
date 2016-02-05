@@ -8,9 +8,9 @@
 #include "llvm/IR/Instructions.h"
 #include "llvm/Support/raw_ostream.h"
 
-#include "../include/LivenessPointsToMisc.h"
-#include "../include/IntraproceduralLivenessPointsTo.h"
-#include "../include/PointsToNode.h"
+#include "LivenessPointsToMisc.h"
+#include "IntraproceduralLivenessPointsTo.h"
+#include "PointsToNode.h"
 
 void IntraproceduralLivenessPointsTo::subtractKill(std::set<PointsToNode *> &Lin,
                                     Instruction *I,

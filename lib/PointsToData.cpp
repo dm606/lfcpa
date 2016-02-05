@@ -1,7 +1,7 @@
 #include "llvm/IR/Function.h"
 #include "llvm/IR/InstIterator.h"
 
-#include "../include/PointsToData.h"
+#include "PointsToData.h"
 
 void dumpPointsToRelation(const PointsToRelation *R) {
     bool first = true;
