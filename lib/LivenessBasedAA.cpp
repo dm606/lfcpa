@@ -29,25 +29,32 @@ struct LivenessBasedAA : public ModulePass, public AliasAnalysis {
         if (LocA.Size == 0 || LocB.Size == 0)
             return NoAlias;
 
+        // Pointer casts (including GEPs with indices that are all zero) do not
+        // affect what is pointed to.
         const Value *A = LocA.Ptr->stripPointerCasts();
         const Value *B = LocB.Ptr->stripPointerCasts();
 
+        // Some preliminary (and very fast!) checks.
         if (!A->getType()->isPointerTy() || !B->getType()->isPointerTy())
             return NoAlias;
-
         if (A == B)
             return MustAlias;
 
         LivenessSet ASet = analysis.getPointsToSet(A);
         LivenessSet BSet = analysis.getPointsToSet(B);
 
+        // If either of the sets are empty, then we don't know what one of the
+        // values can point to, and therefore we don't know if they can alias.
         if (ASet.empty() || BSet.empty())
             return AliasAnalysis::alias(LocA, LocB);
 
+        // If the values may point to the same thing, then they may alias.
         for (PointsToNode *N : ASet)
-            if (BSet.find(N) != BSet.end())
-                return AliasAnalysis::alias(LocA, LocB);
+            for (PointsToNode *M : BSet)
+                if (M->isSubNodeOf(N) || N->isSubNodeOf(M))
+                    return AliasAnalysis::alias(LocA, LocB);
 
+        // If the values do not share any pointees then they cannot alias.
         return NoAlias;
     }
 

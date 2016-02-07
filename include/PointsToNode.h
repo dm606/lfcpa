@@ -1,10 +1,14 @@
 #ifndef LFCPA_POINTSTONODE_H
 #define LFCPA_POINTSTONODE_H
 
+#include <sstream>
+
 #include "llvm/ADT/StringRef.h"
+#include "llvm/IR/Constants.h"
 #include "llvm/IR/GlobalVariable.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/Value.h"
+#include "llvm/IR/Operator.h"
 #include "llvm/Support/Casting.h"
 #include "llvm/Support/raw_ostream.h"
 
@@ -16,24 +20,47 @@ public:
         PTNK_Unknown,
         PTNK_Value,
         PTNK_Global,
-        PTNK_Alloca
+        PTNK_Alloca,
+        PTNK_GEP
     };
+    friend class GEPPointsToNode;
+    friend class PointsToNodeFactory;
+    friend class LivenessSet;
+    friend class LivenessPointsTo;
 private:
     const PointsToNodeKind Kind;
 protected:
+    SmallVector<PointsToNode *, 4> children;
     StringRef name;
     static int nextId;
+    bool summaryNode = false;
 
     PointsToNode(PointsToNodeKind K) : Kind(K) {}
 public:
     PointsToNodeKind getKind() const { return Kind; }
 
-    virtual bool isGlobalAddress() { return false; }
-    virtual bool hasPointerType() { return false; }
-    virtual bool multipleStackFrames() { return false; }
-
+    virtual bool isGlobalAddress() const { return false; }
+    virtual bool hasPointerType() const { return false; }
+    virtual bool multipleStackFrames() const { return false; }
+    virtual bool isAlloca() const { return false; }
+    inline void markAsSummaryNode() {
+        summaryNode = true;
+    }
+    virtual bool isSummaryNode() const {
+        return summaryNode;
+    }
     inline StringRef getName() const {
         return name;
+    }
+    inline bool isSubNodeOf(PointsToNode *N) {
+        if (this == N)
+            return true;
+
+        for (PointsToNode *Child : N->children)
+            if (isSubNodeOf(Child))
+                return true;
+
+        return false;
     }
 };
 
@@ -44,6 +71,11 @@ class UnknownPointsToNode : public PointsToNode {
     public:
         UnknownPointsToNode() : PointsToNode(PTNK_Unknown), stdName("?") {
             name = StringRef(stdName);
+        }
+
+        bool isSummaryNode() const override {
+            // Unknown nodes are never considered to be summary nodes.
+            return false;
         }
 
         static bool classof(const PointsToNode *N) {
@@ -69,9 +101,9 @@ class ValuePointsToNode : public PointsToNode {
             userOrArg = isa<User>(V) || isa<Argument>(V);
         }
 
-        bool isGlobalAddress() override { return globalAddress; }
-        bool hasPointerType() override { return isPointer; }
-        bool multipleStackFrames() override { return userOrArg; }
+        bool isGlobalAddress() const override { return globalAddress; }
+        bool hasPointerType() const override { return isPointer; }
+        bool multipleStackFrames() const override { return userOrArg; }
 
         static bool classof(const PointsToNode *N) {
             return N->getKind() == PTNK_Value;
@@ -89,7 +121,7 @@ class GlobalPointsToNode : public PointsToNode {
            isPointer = G->getValueType()->isPointerTy();
         }
 
-        bool hasPointerType() override { return isPointer; }
+        bool hasPointerType() const override { return isPointer; }
 
         static bool classof(const PointsToNode *N) {
             return N->getKind() == PTNK_Global;
@@ -107,10 +139,49 @@ class AllocaPointsToNode : public PointsToNode {
            isPointer = AI->getAllocatedType()->isPointerTy();
         }
 
-        bool hasPointerType() override { return isPointer; }
+        bool hasPointerType() const override { return isPointer; }
+        bool multipleStackFrames() const override { return true; }
+        bool isAlloca() const override { return true; }
 
         static bool classof(const PointsToNode *N) {
             return N->getKind() == PTNK_Alloca;
+        }
+};
+
+class GEPPointsToNode : public PointsToNode {
+    private:
+        const PointsToNode *Parent;
+        bool pointerType;
+        SmallVector<APInt, 8> indices;
+        std::string stdName;
+        friend class PointsToNodeFactory;
+    public:
+        GEPPointsToNode(PointsToNode *Parent, const Type *Type, User::const_op_iterator I, User::const_op_iterator E) : PointsToNode(PTNK_GEP), Parent(Parent) {
+            pointerType = Type->isPointerTy();
+
+            std::stringstream ns;
+            ns << Parent->getName().str();
+            for (; I != E; ++I) {
+                assert(isa<ConstantInt>(I) && "Can only treat GEPs with constant indices field-sensitively.");
+                ConstantInt *Int = cast<ConstantInt>(I);
+                indices.push_back(Int->getValue());
+                ns << "[";
+                ns << Int->getZExtValue();
+                ns << "]";
+            }
+            Parent->children.push_back(this);
+            stdName = ns.str();
+            name = StringRef(stdName);
+        }
+
+        GEPPointsToNode(PointsToNode *Parent, const GEPOperator *V) : GEPPointsToNode(Parent, V->getType(), V->idx_begin(), V->idx_end()) { }
+
+        bool hasPointerType() const override { return pointerType; }
+        bool multipleStackFrames() const override { return true; }
+        bool isAlloca() const override { return Parent->isAlloca(); }
+
+        static bool classof(const PointsToNode *N) {
+            return N->getKind() == PTNK_GEP;
         }
 };
 

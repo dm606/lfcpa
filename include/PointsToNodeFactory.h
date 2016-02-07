@@ -2,6 +2,7 @@
 #define LFCPA_POINTSTONODEFACTORY_H
 
 #include "llvm/ADT/DenseMap.h"
+#include "llvm/IR/Operator.h"
 #include "llvm/IR/Value.h"
 
 #include "PointsToNode.h"
@@ -12,11 +13,13 @@ class PointsToNodeFactory {
         DenseMap<const AllocaInst *, PointsToNode *> allocaMap;
         DenseMap<const GlobalVariable *, PointsToNode *> globalMap;
         UnknownPointsToNode unknown;
+        bool matchGEPNode(const GEPOperator *, const PointsToNode *) const;
     public:
         PointsToNode *getUnknown();
         PointsToNode *getNode(const Value *);
         PointsToNode *getAllocaNode(AllocaInst *);
         PointsToNode *getGlobalNode(GlobalVariable *);
+        PointsToNode *getIndexedAllocaNode(PointsToNode *, GetElementPtrInst *);
 };
 
 #endif

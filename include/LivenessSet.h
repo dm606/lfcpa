@@ -36,6 +36,12 @@ class LivenessSet {
         }
 
         inline size_type erase(PointsToNode *N) {
+            // When we kill a node, it's children (i.e. GEPs) are also killed.
+            for (PointsToNode *Child : N->children) {
+                assert(isa<GEPPointsToNode>(Child) && "All children of PointsToNodes should be GEPs");
+                s.erase(Child);
+            }
+
             return s.erase(N);
         }
 

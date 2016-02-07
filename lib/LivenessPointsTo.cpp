@@ -25,26 +25,34 @@ LivenessSet LivenessPointsTo::getPointsToSet(const Value *V) {
 void LivenessPointsTo::subtractKill(LivenessSet &Lin,
                                     Instruction *I,
                                     PointsToRelation *Ain) {
-    Lin.erase(factory.getNode(I));
+    PointsToNode *N = factory.getNode(I);
+
+    // FIXME: Can we ever kill summary nodes?
+    // Note that we don't kill GEPs where they are defined; instead, we kill
+    // them where the parent is defined, so that their points-to information is
+    // preserved for longer.
+    if (!N->isSummaryNode() && !isa<GetElementPtrInst>(I))
+        Lin.erase(N);
+
     if (StoreInst *SI = dyn_cast<StoreInst>(I)) {
         Value *Ptr = SI->getPointerOperand();
         PointsToNode *PtrNode = factory.getNode(Ptr);
 
-        bool moreThanOne = false;
+        bool strongUpdate = true;
         PointsToNode *PointedTo = nullptr;
 
         for (auto P : *Ain) {
             if (P.first == PtrNode) {
-                if (PointedTo == nullptr)
-                    PointedTo = P.second;
-                else {
-                    moreThanOne = true;
+                if (P.second->isSummaryNode() || PointedTo != nullptr) {
+                    strongUpdate = false;
                     break;
                 }
+                else
+                    PointedTo = P.second;
             }
         }
 
-        if (!moreThanOne) {
+        if (strongUpdate) {
             if (PointedTo == nullptr || PointedTo == factory.getUnknown()) {
                 // We have no information about what Ptr can point to, so kill
                 // everything.
@@ -134,6 +142,7 @@ LivenessSet LivenessPointsTo::getRestrictedDef(Instruction *I,
     else {
         switch (I->getOpcode()) {
             case Instruction::Alloca:
+            case Instruction::GetElementPtr:
             case Instruction::Load:
             case Instruction::PHI:
             case Instruction::Select:
@@ -157,6 +166,14 @@ void LivenessPointsTo::insertPointedToBy(LivenessSet &S,
     for (auto &P : *Ain)
         if (P.first == VNode)
             S.insert(P.second);
+}
+
+bool pointsToUnknown(PointsToNode *N, PointsToRelation *R) {
+    auto Pred = [&](std::pair<PointsToNode *, PointsToNode *> p) {
+        return p.first == N && isa<UnknownPointsToNode>(p.second);
+    };
+    auto E = R->end();
+    return std::find_if(R->begin(), E, Pred) != E;
 }
 
 LivenessSet LivenessPointsTo::getPointee(Instruction *I, PointsToRelation *Ain) {
@@ -194,6 +211,41 @@ LivenessSet LivenessPointsTo::getPointee(Instruction *I, PointsToRelation *Ain) 
         insertPointedToBy(s, SI->getTrueValue(), Ain);
         insertPointedToBy(s, SI->getFalseValue(), Ain);
     }
+    else if (GetElementPtrInst *GEP = dyn_cast<GetElementPtrInst>(I)) {
+        PointsToNode *GEPNode = factory.getNode(GEP);
+        // If the node is not a summary node, then we are treating the GEP
+        // field-sensitively.
+        if (!GEPNode->isSummaryNode()) {
+            auto Index = GEP->idx_begin(), E = GEP->idx_end();
+            assert(Index != E && "A getelementptr instruction must have at least one index.");
+            (void)E;
+            if (cast<ConstantInt>(Index)->isZero()) {
+                if (AllocaInst *AI = dyn_cast<AllocaInst>(GEP->getPointerOperand())) {
+                    // If we treat this GEP field-sensitively, and if the pointer that
+                    // it is based on points only to an alloca, and the first index is 0
+                    // (i.e. the field is inside the alloca), then we use a GEP based on
+                    // the alloca for the pointee.
+                    PointsToNode *Alloca = factory.getAllocaNode(AI);
+                    s.insert(factory.getIndexedAllocaNode(Alloca, GEP));
+                    return s;
+                }
+                else if (pointsToUnknown(factory.getNode(GEP), Ain)) {
+                    // If we treat this GEP field-sensitively, and if we don't
+                    // know what the pointer that the GEP is based on points to,
+                    // then we don't know what the result of the GEP points to.
+                    s.insert(factory.getUnknown());
+                    return s;
+                }
+            }
+        }
+        else {
+            // If the GEP has a non-constant index, then the node used to
+            // represent it is the same as that used to represent the pointer
+            // that is indexed. We therefore don't have to add any pointees
+            // here.
+        }
+    }
+
     return s;
 }
 
@@ -329,6 +381,10 @@ LivenessSet *LivenessPointsTo::getReachable(Function *Callee, CallInst *CI, Poin
             for (auto P : *Aout)
                 if (P.first == N)
                     insertReachable(P.second);
+
+            // If a node is reachable, then so are its subnodes.
+            for (auto *Child : N->children)
+                insertReachable(Child);
         }
     };
 
@@ -385,6 +441,10 @@ PointsToRelation * LivenessPointsTo::getReachablePT(Function *Callee, CallInst *
             for (auto P : *Ain)
                 if (P.first == N)
                     insertReachable(P.second);
+
+            // If a node is reachable, then so are its subnodes.
+            for (auto *Child : N->children)
+                insertReachable(Child);
         }
     };
 
@@ -432,6 +492,10 @@ void LivenessPointsTo::insertReachable(Function *Callee, CallInst *CI, LivenessS
             for (auto P : *Ain)
                 if (P.first == N)
                     insertReachable(P.second);
+
+            // If a node is reachable, then so are its subnodes.
+            for (auto *Child : N->children)
+                insertReachable(Child);
         }
     };
 
@@ -467,10 +531,10 @@ void LivenessPointsTo::insertReachable(Function *Callee, CallInst *CI, LivenessS
 }
 
 void LivenessPointsTo::insertReachableDeclaration(CallInst *CI, LivenessSet &N, PointsToRelation *Ain) {
-    // Can globals be accessed by the function?  This is roughly the mark phase
-    // from mark-and-sweep garbage collection. We begin with the roots, which
-    // are the arguments of the function,  then determine what is reachable
-    // using the points-to relation.
+    // FIXME: Can globals be accessed by the function?
+    // This is roughly the mark phase from mark-and-sweep garbage collection. We
+    // begin with the roots, which are the arguments of the function,  then
+    // determine what is reachable using the points-to relation.
     LivenessSet reachable;
 
     std::function<void(PointsToNode *)> insertReachable = [&](PointsToNode *N) {
@@ -478,6 +542,10 @@ void LivenessPointsTo::insertReachableDeclaration(CallInst *CI, LivenessSet &N, 
             for (auto P : *Ain)
                 if (P.first == N)
                     insertReachable(P.second);
+
+            // If a node is reachable, then so are its subnodes.
+            for (auto *Child : N->children)
+                insertReachable(Child);
         }
     };
 
@@ -496,6 +564,10 @@ void LivenessPointsTo::insertReachablePT(CallInst *CI, PointsToRelation &N, Poin
             for (auto P : *Ain)
                 if (P.first == N)
                     insertReachable(P.second);
+
+            // If a node is reachable, then so are its subnodes.
+            for (auto *Child : N->children)
+                insertReachable(Child);
         }
     };
 
@@ -614,7 +686,8 @@ void LivenessPointsTo::runOnFunction(Function *F, const CallString &CS, Intrapro
 
     LivenessSet *Globals = ExitLiveness == nullptr ? new LivenessSet(globals) : nullptr;
 
-    // Initialize ain, aout, lin and lout for each instruction.
+    // Initialize ain, aout, lin and lout for each instruction, and ensure that
+    // GEPs are handled correctly.
     for (inst_iterator S = inst_begin(F), I = S, E = inst_end(F); I != E; ++I) {
         Instruction *inst = &*I;
         // If the instruction is a ReturnInst, the values that are live after
@@ -631,6 +704,17 @@ void LivenessPointsTo::runOnFunction(Function *F, const CallString &CS, Intrapro
             nonresult.insert(std::make_pair(inst, std::make_pair(new LivenessSet(), EntryPointsTo)));
         else
             nonresult.insert(std::make_pair(inst, std::make_pair(new LivenessSet(), new PointsToRelation())));
+
+        if (GetElementPtrInst *GEP = dyn_cast<GetElementPtrInst>(inst)) {
+            // If some GEPs which are based on a pointer have all constant
+            // indices and some have none-constant indices, then we want to
+            // treat all of the GEPs based on that pointer field-insensitively.
+            // To ensure that this happens, we ensure that a summary node for
+            // the pointer is created before any of the GEPs with constant
+            // indices are looked at.
+            if (!GEP->hasAllConstantIndices())
+                factory.getNode(GEP);
+        }
     }
 
     // Create and initialize worklist.
@@ -700,7 +784,7 @@ void LivenessPointsTo::runOnFunction(Function *F, const CallString &CS, Intrapro
                     // dataflow information finite.
                     LivenessSet survivesCall;
                     for (auto N : *instruction_lout)
-                        if ((N != CINode && ExitL->find(N) == ExitL->end()) || isa<AllocaPointsToNode>(N) || N->multipleStackFrames())
+                        if ((N != CINode && ExitL->find(N) == ExitL->end()) || N->isAlloca() || N->multipleStackFrames())
                             survivesCall.insert(N);
 
                     // Compute lin for the current instruction. A live variable
