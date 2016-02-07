@@ -19,9 +19,6 @@ typedef SmallVector<std::pair<CallString, IntraproceduralPointsTo *>, 8> Procedu
 bool arePointsToMapsEqual(Function *F, IntraproceduralPointsTo *a, IntraproceduralPointsTo *b);
 IntraproceduralPointsTo *copyPointsToMap(IntraproceduralPointsTo *);
 
-void dumpPointsToRelation(const PointsToRelation *);
-void dumpLivenessSet(const LivenessSet *);
-
 class PointsToData {
     public:
         PointsToData() {}

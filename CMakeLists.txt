@@ -23,6 +23,8 @@ add_llvm_loadable_module(
     lib/IntraproceduralLivenessPointsTo.cpp
     lib/LivenessBasedAA.cpp
     lib/LivenessPointsTo.cpp
+    lib/LivenessSet.cpp
     lib/PointsToData.cpp
     lib/PointsToNode.cpp
-    lib/PointsToNodeFactory.cpp)
+    lib/PointsToNodeFactory.cpp
+    lib/PointsToRelation.cpp)

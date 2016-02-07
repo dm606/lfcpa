@@ -41,6 +41,8 @@ class PointsToRelation {
         inline bool operator!=(const PointsToRelation &R) const {
             return s!=R.s;
         }
+
+        void dump() const;
     private:
         std::set<std::pair<PointsToNode *, PointsToNode *>> s;
 };

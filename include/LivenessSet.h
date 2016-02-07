@@ -63,6 +63,8 @@ class LivenessSet {
         inline bool operator!=(const LivenessSet &R) const {
             return s!=R.s;
         }
+
+        void dump() const;
     private:
         std::set<PointsToNode *> s;
 };

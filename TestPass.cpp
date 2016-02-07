@@ -20,7 +20,6 @@ struct TestPass : public ModulePass {
     TestPass() : ModulePass(ID) {}
 
     bool runOnModule(Module &M) override {
-        errs() << "TestPass: ";
         analysis.runOnModule(M);
         errs() << "\n";
 
@@ -42,11 +41,11 @@ struct TestPass : public ModulePass {
                         auto l = sv.first;
                         auto p = sv.second;
                         errs() << "Lin: \033[1;31m";
-                        dumpLivenessSet(l);
+                        l->dump();
                         errs() << "\033[0m";
                         I.dump();
                         errs() << "Aout: \033[1;32m";
-                        dumpPointsToRelation(p);
+                        p->dump();
                         errs() << "\033[0m";
                     }
                 }

@@ -24,8 +24,8 @@ struct LivenessBasedAA : public ModulePass, public AliasAnalysis {
         return false;
     }
 
-    AliasResult alias(const MemoryLocation &LocA,
-                      const MemoryLocation &LocB) override {
+    AliasResult getResult(const MemoryLocation &LocA,
+                          const MemoryLocation &LocB) {
         if (LocA.Size == 0 || LocB.Size == 0)
             return NoAlias;
 
@@ -46,16 +46,32 @@ struct LivenessBasedAA : public ModulePass, public AliasAnalysis {
         // If either of the sets are empty, then we don't know what one of the
         // values can point to, and therefore we don't know if they can alias.
         if (ASet.empty() || BSet.empty())
-            return AliasAnalysis::alias(LocA, LocB);
+            return MayAlias;
 
         // If the values may point to the same thing, then they may alias.
         for (PointsToNode *N : ASet)
             for (PointsToNode *M : BSet)
                 if (M->isSubNodeOf(N) || N->isSubNodeOf(M))
-                    return AliasAnalysis::alias(LocA, LocB);
+                    return MayAlias;
 
         // If the values do not share any pointees then they cannot alias.
         return NoAlias;
+    }
+
+    AliasResult alias(const MemoryLocation &LocA,
+                      const MemoryLocation &LocB) override {
+        AliasResult result = getResult(LocA, LocB);
+
+        AliasResult n = AliasAnalysis::alias(LocA, LocB);
+        if (result == MayAlias && n != MayAlias) {
+            errs() << "BasicAA wins on ";
+            LocA.Ptr->dump();
+            errs() << ", ";
+            LocB.Ptr->dump();
+            errs() << "\n";
+        }
+
+        return result == MayAlias ? AliasAnalysis::alias(LocA, LocB) : result;
     }
 
     void getAnalysisUsage(AnalysisUsage &AU) const override {
@@ -70,8 +86,6 @@ struct LivenessBasedAA : public ModulePass, public AliasAnalysis {
     }
 };
 }
-
-
 
 char LivenessBasedAA::ID = 0;
 static RegisterPass<LivenessBasedAA> X("lfcpa", "Liveness-based alias analysis pass.", false, false);

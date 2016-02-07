@@ -3,28 +3,6 @@
 
 #include "PointsToData.h"
 
-void dumpPointsToRelation(const PointsToRelation *R) {
-    bool first = true;
-    for (auto P : *R) {
-        if (!first)
-            errs() << ", ";
-        first = false;
-        errs() << P.first->getName() << "-->" << P.second->getName();
-    }
-    errs() << "\n";
-}
-
-void dumpLivenessSet(const LivenessSet *L) {
-    bool first = true;
-    for (auto N : *L) {
-        if (!first)
-            errs() << ", ";
-        first = false;
-        errs() << N->getName();
-    }
-    errs() << "\n";
-}
-
 ProcedurePointsTo *PointsToData::getAtFunction(Function *F) const {
     auto result = data.find(F);
     assert (result != data.end() && "The points-to data does not contain an entry for the specified function.");
