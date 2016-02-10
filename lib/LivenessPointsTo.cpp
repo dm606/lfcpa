@@ -14,11 +14,11 @@
 #include "PointsToData.h"
 #include "PointsToNode.h"
 
-LivenessSet LivenessPointsTo::getPointsToSet(const Value *V) {
+std::set<PointsToNode *> LivenessPointsTo::getPointsToSet(const Value *V) {
     PointsToNode *N = factory.getNode(V);
     auto P = pointsToSets.find(N);
     if (P == pointsToSets.end())
-        return LivenessSet();
+        return std::set<PointsToNode *>();
     return *P->second;
 }
 
@@ -159,7 +159,7 @@ LivenessSet LivenessPointsTo::getRestrictedDef(Instruction *I,
     return s;
 }
 
-void LivenessPointsTo::insertPointedToBy(LivenessSet &S,
+void LivenessPointsTo::insertPointedToBy(std::set<PointsToNode *> &S,
                                          Value *V,
                                          PointsToRelation *Ain) {
     PointsToNode *VNode = factory.getNode(V);
@@ -176,8 +176,8 @@ bool pointsToUnknown(PointsToNode *N, PointsToRelation *R) {
     return std::find_if(R->begin(), E, Pred) != E;
 }
 
-LivenessSet LivenessPointsTo::getPointee(Instruction *I, PointsToRelation *Ain) {
-    LivenessSet s;
+std::set<PointsToNode *> LivenessPointsTo::getPointee(Instruction *I, PointsToRelation *Ain) {
+    std::set<PointsToNode *> s;
     if (LoadInst *LI = dyn_cast<LoadInst>(I)) {
         Value *Ptr = LI->getPointerOperand();
         PointsToNode *PtrNode = factory.getNode(Ptr);
@@ -251,7 +251,7 @@ LivenessSet LivenessPointsTo::getPointee(Instruction *I, PointsToRelation *Ain) 
 
 void LivenessPointsTo::unionCrossProduct(PointsToRelation &Result,
                                          LivenessSet &A,
-                                         LivenessSet &B) {
+                                         std::set<PointsToNode *> &B) {
     for (auto &X : A)
         for (auto &Y : B)
             Result.insert(std::make_pair(X, Y));
@@ -892,7 +892,7 @@ void LivenessPointsTo::runOnFunction(Function *F, const CallString &CS, Intrapro
             unionRelationRestriction(s, instruction_ain, &notKilled);
             LivenessSet def =
                 getRestrictedDef(I, instruction_ain, instruction_lout);
-            LivenessSet pointee = getPointee(I, instruction_ain);
+            std::set<PointsToNode *> pointee = getPointee(I, instruction_ain);
             unionCrossProduct(s, def, pointee);
             if (s != *instruction_aout) {
                 instruction_aout->clear();
@@ -984,7 +984,7 @@ bool LivenessPointsTo::runOnFunctionAt(const CallString& CS,
     }
 }
 
-void LivenessPointsTo::addToLivenessSets(const Function& F, IntraproceduralPointsTo *PT) {
+void LivenessPointsTo::addToPointsToSets(const Function& F, IntraproceduralPointsTo *PT) {
     PointsToNode *unknown = factory.getUnknown();
     for (auto I = inst_begin(F), E = inst_end(F); I != E; ++I) {
         auto P = PT->find(&*I);
@@ -993,9 +993,9 @@ void LivenessPointsTo::addToLivenessSets(const Function& F, IntraproceduralPoint
         for (std::pair<PointsToNode *, PointsToNode *> p : *R) {
             if (p.first != unknown && p.second != unknown) {
                 auto Set = pointsToSets.find(p.first);
-                LivenessSet *S = nullptr;
+                std::set<PointsToNode *> *S = nullptr;
                 if (Set == pointsToSets.end()) {
-                    S = new LivenessSet();
+                    S = new std::set<PointsToNode *>();
                     pointsToSets.insert(std::make_pair(p.first, S));
                 }
                 else
@@ -1030,7 +1030,7 @@ void LivenessPointsTo::runOnModule(Module &M) {
             bool found = false;
             for (auto p : *P) {
                 if (p.first == CallString::empty()) {
-                    addToLivenessSets(F, p.second);
+                    addToPointsToSets(F, p.second);
                     found = true;
                     break;
                 }

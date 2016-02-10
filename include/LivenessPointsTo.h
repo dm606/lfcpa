@@ -16,12 +16,12 @@ class LivenessPointsTo {
 public:
     void runOnModule(Module &);
     ProcedurePointsTo *getPointsTo(Function &) const;
-    LivenessSet getPointsToSet(const Value *);
+    std::set<PointsToNode *> getPointsToSet(const Value *);
 private:
     LivenessSet getRestrictedDef(Instruction *, PointsToRelation *, LivenessSet *);
-    void insertPointedToBy(LivenessSet &, Value *, PointsToRelation *);
-    LivenessSet getPointee(Instruction *, PointsToRelation *);
-    void unionCrossProduct(PointsToRelation &, LivenessSet &, LivenessSet &);
+    void insertPointedToBy(std::set<PointsToNode *> &, Value *, PointsToRelation *);
+    std::set<PointsToNode *> getPointee(Instruction *, PointsToRelation *);
+    void unionCrossProduct(PointsToRelation &, LivenessSet &, std::set<PointsToNode *> &);
     void subtractKill(LivenessSet &, Instruction *, PointsToRelation *);
     void unionRef(LivenessSet &, Instruction *, LivenessSet *, PointsToRelation *);
     void unionRelationRestriction(PointsToRelation &, PointsToRelation *, LivenessSet *);
@@ -38,11 +38,11 @@ private:
     bool runOnFunctionAt(const CallString &, Function *, PointsToRelation *, LivenessSet *);
     void addNotInvalidatedRestricted(PointsToRelation &, PointsToRelation *, CallInst *, LivenessSet *);
     LivenessSet getInvalidatedNodes(PointsToRelation *, CallInst *);
-    void addToLivenessSets(const Function& F, IntraproceduralPointsTo *PT);
+    void addToPointsToSets(const Function& F, IntraproceduralPointsTo *PT);
     PointsToData data;
     PointsToNodeFactory factory;
     LivenessSet globals;
-    DenseMap<PointsToNode *, LivenessSet *> pointsToSets;
+    DenseMap<PointsToNode *, std::set<PointsToNode *> *> pointsToSets;
 };
 
 #endif

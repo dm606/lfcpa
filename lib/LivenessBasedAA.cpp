@@ -5,7 +5,6 @@
 #include "llvm/Support/raw_ostream.h"
 
 #include "LivenessPointsTo.h"
-#include "LivenessSet.h"
 
 using namespace llvm;
 
@@ -40,8 +39,8 @@ struct LivenessBasedAA : public ModulePass, public AliasAnalysis {
         if (A == B)
             return MustAlias;
 
-        LivenessSet ASet = analysis.getPointsToSet(A);
-        LivenessSet BSet = analysis.getPointsToSet(B);
+        std::set<PointsToNode *> ASet = analysis.getPointsToSet(A);
+        std::set<PointsToNode *> BSet = analysis.getPointsToSet(B);
 
         // If either of the sets are empty, then we don't know what one of the
         // values can point to, and therefore we don't know if they can alias.
