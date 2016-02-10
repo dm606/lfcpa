@@ -27,6 +27,7 @@ struct TestPass : public ModulePass {
             if (F.isDeclaration())
                 continue;
             ProcedurePointsTo data = *analysis.getPointsTo(F);
+            errs() << "Number of call strings for " << F.getName() << ": " << data.size() << "\n";
             for (auto &P : data) {
                 errs() << "\n";
                 errs() << "Function: " << F.getName() << "\n";
