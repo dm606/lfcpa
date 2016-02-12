@@ -99,8 +99,7 @@ PointsToNode* PointsToNodeFactory::getGlobalNode(GlobalVariable *V) {
     }
 }
 
-PointsToNode *PointsToNodeFactory::getIndexedAllocaNode(PointsToNode *A, GetElementPtrInst *GEP) {
-    assert(isa<AllocaPointsToNode>(A));
+PointsToNode *PointsToNodeFactory::getIndexedNode(PointsToNode *A, GetElementPtrInst *GEP) {
     assert(GEP->hasAllConstantIndices());
     for (PointsToNode *Child : A->children)
         if (matchGEPNode(cast<GEPOperator>(GEP), Child))

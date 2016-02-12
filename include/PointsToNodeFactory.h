@@ -19,7 +19,7 @@ class PointsToNodeFactory {
         PointsToNode *getNode(const Value *);
         PointsToNode *getAllocaNode(AllocaInst *);
         PointsToNode *getGlobalNode(GlobalVariable *);
-        PointsToNode *getIndexedAllocaNode(PointsToNode *, GetElementPtrInst *);
+        PointsToNode *getIndexedNode(PointsToNode *, GetElementPtrInst *);
 };
 
 #endif

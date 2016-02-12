@@ -226,7 +226,16 @@ std::set<PointsToNode *> LivenessPointsTo::getPointee(Instruction *I, PointsToRe
                     // (i.e. the field is inside the alloca), then we use a GEP based on
                     // the alloca for the pointee.
                     PointsToNode *Alloca = factory.getAllocaNode(AI);
-                    s.insert(factory.getIndexedAllocaNode(Alloca, GEP));
+                    s.insert(factory.getIndexedNode(Alloca, GEP));
+                    return s;
+                }
+                else if (GlobalVariable *GV = dyn_cast<GlobalVariable>(GEP->getPointerOperand())) {
+                    // If we treat this GEP field-sensitively, and if the pointer that
+                    // it is based on points only to a global, and the first index is 0
+                    // (i.e. the field is inside the global), then we use a GEP based on
+                    // the alloca for the pointee.
+                    PointsToNode *Global = factory.getGlobalNode(GV);
+                    s.insert(factory.getIndexedNode(Global, GEP));
                     return s;
                 }
                 else if (pointsToUnknown(factory.getNode(GEP), Ain)) {
