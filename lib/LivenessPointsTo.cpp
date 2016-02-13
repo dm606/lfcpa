@@ -595,9 +595,8 @@ void LivenessPointsTo::insertReachablePT(CallInst *CI, PointsToRelation &N, Poin
     }
 
     // Anything that return values can point to are roots.
-    for (auto P : Aout)
-        if (ReturnValues.find(P.first) != ReturnValues.end())
-            insertReachable(P.second);
+    for (auto P = Aout.restriction_begin(ReturnValues), E = Aout.restriction_end(ReturnValues); P != E; ++P)
+        insertReachable(P->second);
     // Globals are roots.
     for (auto P : *Ain)
         if (P.first->isGlobalAddress())
@@ -607,9 +606,8 @@ void LivenessPointsTo::insertReachablePT(CallInst *CI, PointsToRelation &N, Poin
             insertReachable(N.first);
 
     // We now determine which pairs are relevant.
-    for (auto P : Aout)
-        if (reachable.find(P.first) != reachable.end())
-            N.insert(P);
+    for (auto P = Aout.restriction_begin(reachable), E = Aout.restriction_end(reachable); P != E; ++P)
+        N.insert(*P);
 }
 
 bool LivenessPointsTo::getCalledFunctionResult(const CallString &CS, Function *F, std::pair<LivenessSet, PointsToRelation>& Result) {
