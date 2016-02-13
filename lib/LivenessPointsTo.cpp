@@ -409,9 +409,8 @@ LivenessSet *LivenessPointsTo::getReachable(Function *Callee, CallInst *CI, Poin
             insertReachable(N);
 
     // Then add all of the relevant globals.
-    for (auto P : *Aout)
-        if (P.first->isGlobalAddress())
-            insertReachable(P.first);
+    for (auto P = Aout->global_begin(), E = Aout->global_end(); P != E; ++P)
+        insertReachable(P->first);
     for (auto N : *Lout)
         if (N->isGlobalAddress())
             insertReachable(N);
@@ -460,9 +459,8 @@ PointsToRelation * LivenessPointsTo::getReachablePT(Function *Callee, CallInst *
     }
 
     // Then add all of the relevant globals.
-    for (auto P : *Ain)
-        if (P.first->isGlobalAddress())
-            insertReachable(P.first);
+    for (auto P = Ain->global_begin(), E = Ain->global_end(); P != E; ++P)
+        insertReachable(P->first);
 
     for (auto P = Ain->restriction_begin(reachable), E = Ain->restriction_end(reachable); P != E; ++P)
         PT->insert(*P);
@@ -504,9 +502,8 @@ void LivenessPointsTo::insertReachable(Function *Callee, CallInst *CI, LivenessS
         ++Arg;
     }
     // Then add all of the relevant globals.
-    for (auto P : *Ain)
-        if (P.first->isGlobalAddress())
-            insertReachable(P.first);
+    for (auto P = Ain->global_begin(), E = Ain->global_end(); P != E; ++P)
+         insertReachable(P->first);
     for (auto N : Lin)
         if (N->isGlobalAddress())
             insertReachable(N);
@@ -598,12 +595,10 @@ void LivenessPointsTo::insertReachablePT(CallInst *CI, PointsToRelation &N, Poin
     for (auto P = Aout.restriction_begin(ReturnValues), E = Aout.restriction_end(ReturnValues); P != E; ++P)
         insertReachable(P->second);
     // Globals are roots.
-    for (auto P : *Ain)
-        if (P.first->isGlobalAddress())
-            insertReachable(P.first);
-    for (auto N : Aout)
-        if (N.first->isGlobalAddress())
-            insertReachable(N.first);
+    for (auto P = Ain->global_begin(), E = Ain->global_end(); P != E; ++P)
+        insertReachable(P->first);
+    for (auto N = Aout.global_begin(), E = Aout.global_end(); N != E; ++N)
+        insertReachable(N->first);
 
     // We now determine which pairs are relevant.
     for (auto P = Aout.restriction_begin(reachable), E = Aout.restriction_end(reachable); P != E; ++P)
