@@ -182,9 +182,8 @@ std::set<PointsToNode *> LivenessPointsTo::getPointee(Instruction *I, PointsToRe
         Value *Ptr = LI->getPointerOperand();
         PointsToNode *PtrNode = factory.getNode(Ptr);
         std::set<PointsToNode *> t;
-        for (auto &P : *Ain)
-            if (P.first == PtrNode)
-                t.insert(P.second);
+        for (auto P = Ain->pointee_begin(PtrNode), E = Ain->pointee_end(PtrNode); P != E; ++P)
+            t.insert(*P);
         for (auto &P : *Ain)
             if (t.find(P.first) != t.end())
                 s.insert(P.second);
