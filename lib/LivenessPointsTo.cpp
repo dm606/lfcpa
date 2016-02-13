@@ -41,15 +41,13 @@ void LivenessPointsTo::subtractKill(LivenessSet &Lin,
         bool strongUpdate = true;
         PointsToNode *PointedTo = nullptr;
 
-        for (auto P : *Ain) {
-            if (P.first == PtrNode) {
-                if (P.second->isSummaryNode() || PointedTo != nullptr) {
-                    strongUpdate = false;
-                    break;
-                }
-                else
-                    PointedTo = P.second;
+        for (auto P = Ain->pointee_begin(PtrNode), E = Ain->pointee_end(PtrNode); P != E; ++P) {
+            if ((*P)->isSummaryNode() || PointedTo != nullptr) {
+                strongUpdate = false;
+                break;
             }
+            else
+                PointedTo = *P;
         }
 
         if (strongUpdate) {
@@ -94,8 +92,8 @@ void LivenessPointsTo::unionRef(LivenessSet& Lin,
 
         // We only consider the stored value to be ref'd if at least one of the
         // values that can be pointed to by x is live.
-        for (auto P : *Ain) {
-            if (P.first == PtrNode && Lout->find(P.second) != Lout->end()) {
+        for (auto P = Ain->pointee_begin(PtrNode), E = Ain->pointee_end(PtrNode); P != E; ++P) {
+            if (Lout->find(*P) != Lout->end()) {
                 Lin.insert(factory.getNode(SI->getValueOperand()));
                 break;
             }
@@ -135,9 +133,9 @@ LivenessSet LivenessPointsTo::getRestrictedDef(Instruction *I,
         Value *Ptr = SI->getPointerOperand();
         PointsToNode *PtrNode = factory.getNode(Ptr);
 
-        for (auto &P : *Ain)
-            if (P.first == PtrNode && Lout->find(P.second) != Lout->end())
-                s.insert(P.second);
+        for (auto P = Ain->pointee_begin(PtrNode), E = Ain->pointee_end(PtrNode); P != E; ++P)
+            if (Lout->find(*P) != Lout->end())
+                s.insert(*P);
     }
     else {
         switch (I->getOpcode()) {
@@ -270,11 +268,7 @@ ProcedurePointsTo *LivenessPointsTo::getPointsTo(Function &F) const {
 }
 
 bool hasPointee(PointsToRelation &S, PointsToNode *N) {
-    for (auto &P : S)
-        if (P.first == N)
-            return true;
-
-    return false;
+    return S.pointee_begin(N) != S.pointee_end(N);
 }
 
 void LivenessPointsTo::computeLout(Instruction *I, LivenessSet* Lout, IntraproceduralPointsTo *Result, PointsToRelation *Aout, bool insertGlobals) {
@@ -386,9 +380,8 @@ LivenessSet *LivenessPointsTo::getReachable(Function *Callee, CallInst *CI, Poin
 
     std::function<void(PointsToNode *)> insertReachable = [&](PointsToNode *N) {
         if (reachable.insert(N)) {
-            for (auto P : *Aout)
-                if (P.first == N)
-                    insertReachable(P.second);
+            for (auto P = Aout->pointee_begin(N), E = Aout->pointee_end(N); P != E; ++P)
+                insertReachable(*P);
 
             // If a node is reachable, then so are its subnodes.
             for (auto *Child : N->children)
@@ -408,11 +401,8 @@ LivenessSet *LivenessPointsTo::getReachable(Function *Callee, CallInst *CI, Poin
         assert(Arg != Callee->arg_end() && "Argument count mismatch");
         Argument *A = &*Arg;
         PointsToNode *ANode = factory.getNode(A);
-        for (auto P : *Aout) {
-            if (P.first == N) {
-                insertReachable(P.second);
-            }
-        }
+        for (auto P = Aout->pointee_begin(N), E = Aout->pointee_end(N); P != E; ++P)
+            insertReachable(*P);
         if (Lout->find(N) != Lout->end())
             L->insert(ANode);
         ++Arg;
@@ -446,9 +436,8 @@ PointsToRelation * LivenessPointsTo::getReachablePT(Function *Callee, CallInst *
 
     std::function<void(PointsToNode *)> insertReachable = [&](PointsToNode *N) {
         if (reachable.insert(N)) {
-            for (auto P : *Ain)
-                if (P.first == N)
-                    insertReachable(P.second);
+            for (auto P = Ain->pointee_begin(N), E = Ain->pointee_end(N); P != E; ++P)
+                insertReachable(*P);
 
             // If a node is reachable, then so are its subnodes.
             for (auto *Child : N->children)
@@ -468,11 +457,9 @@ PointsToRelation * LivenessPointsTo::getReachablePT(Function *Callee, CallInst *
         assert(Arg != Callee->arg_end() && "Argument count mismatch");
         Argument *A = &*Arg;
         PointsToNode *ANode = factory.getNode(A);
-        for (auto P : *Ain) {
-            if (P.first == N) {
-                insertReachable(P.second);
-                PT->insert(std::make_pair(ANode, P.second));
-            }
+        for (auto P = Ain->pointee_begin(N), E = Ain->pointee_end(N); P != E; ++P) {
+            insertReachable(*P);
+            PT->insert(std::make_pair(ANode, *P));
         }
         ++Arg;
     }
@@ -519,9 +506,8 @@ void LivenessPointsTo::insertReachable(Function *Callee, CallInst *CI, LivenessS
         PointsToNode *ANode = factory.getNode(A);
         if (Lin.find(ANode) != Lin.end())
             N.insert(Node);
-        for (auto P : *Ain)
-            if (P.first == Node)
-                insertReachable(P.second);
+        for (auto P = Ain->pointee_begin(Node), E = Ain->pointee_end(Node); P != E; ++P)
+            insertReachable(*P);
         ++Arg;
     }
     // Then add all of the relevant globals.
@@ -547,9 +533,8 @@ void LivenessPointsTo::insertReachableDeclaration(CallInst *CI, LivenessSet &N, 
 
     std::function<void(PointsToNode *)> insertReachable = [&](PointsToNode *N) {
         if (reachable.insert(N)) {
-            for (auto P : *Ain)
-                if (P.first == N)
-                    insertReachable(P.second);
+            for (auto P = Ain->pointee_begin(N), E = Ain->pointee_end(N); P != E; ++P)
+                insertReachable(*P);
 
             // If a node is reachable, then so are its subnodes.
             for (auto *Child : N->children)
@@ -569,9 +554,8 @@ void LivenessPointsTo::insertReachablePT(CallInst *CI, PointsToRelation &N, Poin
 
     std::function<void(PointsToNode *)> insertReachable = [&](PointsToNode *N) {
         if (reachable.insert(N)) {
-            for (auto P : *Ain)
-                if (P.first == N)
-                    insertReachable(P.second);
+            for (auto P = Ain->pointee_begin(N), E = Ain->pointee_end(N); P != E; ++P)
+                 insertReachable(*P);
 
             // If a node is reachable, then so are its subnodes.
             for (auto *Child : N->children)
@@ -586,14 +570,13 @@ void LivenessPointsTo::insertReachablePT(CallInst *CI, PointsToRelation &N, Poin
     bool pointToUnknown = false;
     for (PointsToNode *V : ReturnValues) {
         bool unknown = true;
-        for (auto P : Aout) {
-            if (P.first == V) {
-                if (P.second == factory.getUnknown())
-                    pointToUnknown = true;
-                else
-                    unknown = false;
-                break;
-            }
+
+        for (auto P = Ain->pointee_begin(V), E = Ain->pointee_end(V); P != E; ++P) {
+            if (*P == factory.getUnknown())
+                pointToUnknown = true;
+            else
+                unknown = false;
+            break;
         }
 
         pointToUnknown |= unknown;
@@ -613,11 +596,9 @@ void LivenessPointsTo::insertReachablePT(CallInst *CI, PointsToRelation &N, Poin
     // arguments, since they are passed by value.
     for (Value *V : CI->arg_operands()) {
         PointsToNode *Node = factory.getNode(V);
-        for (auto P : *Ain) {
-            if (P.first == Node) {
-                N.insert(P);
-                insertReachable(P.second);
-            }
+        for (auto P = Ain->pointee_begin(Node), E = Ain->pointee_end(Node); P != E; ++P) {
+            N.insert(std::make_pair(Node, *P));
+            insertReachable(*P);
         }
     }
 
