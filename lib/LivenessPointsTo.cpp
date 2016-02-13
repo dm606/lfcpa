@@ -80,9 +80,8 @@ void LivenessPointsTo::unionRef(LivenessSet& Lin,
             Value *Ptr = LI->getPointerOperand();
             PointsToNode *PtrNode = factory.getNode(Ptr);
             Lin.insert(PtrNode);
-            for (auto &P : *Ain)
-                if (P.first == PtrNode)
-                    Lin.insert(P.second);
+            for (auto P = Ain->pointee_begin(PtrNode), E = Ain->pointee_end(PtrNode); P != E; ++P)
+                Lin.insert(*P);
         }
     }
     else if (StoreInst *SI = dyn_cast<StoreInst>(I)) {
@@ -160,9 +159,8 @@ void LivenessPointsTo::insertPointedToBy(std::set<PointsToNode *> &S,
                                          Value *V,
                                          PointsToRelation *Ain) {
     PointsToNode *VNode = factory.getNode(V);
-    for (auto &P : *Ain)
-        if (P.first == VNode)
-            S.insert(P.second);
+    for (auto P = Ain->pointee_begin(VNode), E = Ain->pointee_end(VNode); P != E; ++P)
+        S.insert(*P);
 }
 
 bool pointsToUnknown(PointsToNode *N, PointsToRelation *R) {
@@ -279,9 +277,8 @@ void LivenessPointsTo::computeLout(Instruction *I, LivenessSet* Lout, Intraproce
         if (insertGlobals) {
             std::function<void(PointsToNode *)> insertReachable = [&](PointsToNode *N) {
                 if (Lout->insert(N)) {
-                    for (auto P : *Aout)
-                        if (P.first == N)
-                            insertReachable(P.second);
+                    for (auto P = Aout->pointee_begin(N), E = Aout->pointee_end(N); P != E; ++P)
+                        insertReachable(*P);
                 }
             };
 
@@ -481,9 +478,8 @@ void LivenessPointsTo::insertReachable(Function *Callee, CallInst *CI, LivenessS
 
     std::function<void(PointsToNode *)> insertReachable = [&](PointsToNode *N) {
         if (reachable.insert(N)) {
-            for (auto P : *Ain)
-                if (P.first == N)
-                    insertReachable(P.second);
+            for (auto P = Ain->pointee_begin(N), E = Ain->pointee_end(N); P != E; ++P)
+                insertReachable(*P);
 
             // If a node is reachable, then so are its subnodes.
             for (auto *Child : N->children)
