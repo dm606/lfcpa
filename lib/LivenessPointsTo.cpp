@@ -120,9 +120,8 @@ void LivenessPointsTo::unionRef(LivenessSet& Lin,
 void LivenessPointsTo::unionRelationRestriction(PointsToRelation &Result,
                                                 PointsToRelation *Aout,
                                                 LivenessSet *Lin) {
-    for (auto &P : *Aout)
-        if (Lin->find(P.first) != Lin->end())
-            Result.insert(P);
+    for (auto P = Aout->restriction_begin(Lin), E = Aout->restriction_end(Lin); P != E; ++P)
+        Result.insert(*P);
 }
 
 LivenessSet LivenessPointsTo::getRestrictedDef(Instruction *I,
@@ -182,9 +181,8 @@ std::set<PointsToNode *> LivenessPointsTo::getPointee(Instruction *I, PointsToRe
         std::set<PointsToNode *> t;
         for (auto P = Ain->pointee_begin(PtrNode), E = Ain->pointee_end(PtrNode); P != E; ++P)
             t.insert(*P);
-        for (auto &P : *Ain)
-            if (t.find(P.first) != t.end())
-                s.insert(P.second);
+        for (auto P = Ain->restriction_begin(t), E = Ain->restriction_end(t); P != E; ++P)
+            s.insert(P->second);
     }
     else if (StoreInst *SI = dyn_cast<StoreInst>(I)) {
         Value *V = SI->getValueOperand();
@@ -469,9 +467,8 @@ PointsToRelation * LivenessPointsTo::getReachablePT(Function *Callee, CallInst *
         if (P.first->isGlobalAddress())
             insertReachable(P.first);
 
-    for (auto P : *Ain)
-        if (reachable.find(P.first) != reachable.end())
-            PT->insert(P);
+    for (auto P = Ain->restriction_begin(reachable), E = Ain->restriction_end(reachable); P != E; ++P)
+        PT->insert(*P);
 
     return PT;
 }
@@ -588,9 +585,8 @@ void LivenessPointsTo::insertReachablePT(CallInst *CI, PointsToRelation &N, Poin
     if (pointToUnknown)
         N.insert(std::make_pair(factory.getNode(CI), factory.getUnknown()));
     else
-        for (auto P : Aout)
-            if (ReturnValues.find(P.first) != ReturnValues.end())
-                N.insert(std::make_pair(factory.getNode(CI), P.second));
+        for (auto P = Aout.restriction_begin(ReturnValues), E = Aout.restriction_end(ReturnValues); P != E; ++P)
+            N.insert(std::make_pair(factory.getNode(CI), P->second));
 
     // The function can change it's formal arguments, but not it's actual
     // arguments, since they are passed by value.
@@ -846,9 +842,9 @@ void LivenessPointsTo::runOnFunction(Function *F, const CallString &CS, Intrapro
                 for (PointsToNode *N : reachable)
                     if (instruction_lout->find(N) != instruction_lout->end())
                         s.insert(std::make_pair(N, factory.getUnknown()));
-                for (auto P : *instruction_ain)
-                    if (reachable.find(P.first) == reachable.end() && instruction_lout->find(P.first) != instruction_lout->end())
-                        s.insert(P);
+                for (auto P = instruction_ain->restriction_begin(instruction_lout), E = instruction_ain->restriction_end(instruction_lout); P != E; ++P)
+                    if (reachable.find(P->first) == reachable.end())
+                        s.insert(*P);
 
                 if (s != *instruction_aout) {
                     instruction_aout->clear();

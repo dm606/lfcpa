@@ -3,6 +3,7 @@
 
 #include <set>
 
+#include "LivenessSet.h"
 #include "PointsToNode.h"
 
 class PointsToRelation {
@@ -48,6 +49,57 @@ public:
         const PointsToNode *N;
     };
 
+    class const_restriction_iterator {
+    public:
+        typedef std::forward_iterator_tag iterator_category;
+        typedef std::pair<PointsToNode *, PointsToNode *> value_type;
+        typedef std::pair<PointsToNode *, PointsToNode *> const* pointer;
+        typedef std::pair<PointsToNode *, PointsToNode *> const& reference;
+
+        const_restriction_iterator(const_iterator I, const_iterator E, std::set<PointsToNode *>::const_iterator DI, std::set<PointsToNode *>::const_iterator DE) : I(I), E(E), DI(DI), DE(DE) {
+            advance_iterators();
+        }
+
+        inline reference operator*() const { return *I; }
+        inline pointer operator->() const { return &operator*(); }
+
+        inline bool operator==(const const_restriction_iterator &Y) const {
+            return I == Y.I || (I == E && Y.I == Y.E);
+        }
+        inline bool operator !=(const const_restriction_iterator &Y) const {
+            return !operator==(Y);
+        }
+
+        const_restriction_iterator &operator++() {
+            ++I;
+            advance_iterators();
+            return *this;
+        }
+
+        inline bool atEnd() const { return I == E; }
+    private:
+        inline void advance_iterators() {
+            // Increment I zero or more times, until its first component is in
+            // DI..DE (or until the end is reached), and advance DI until it
+            // reaches I (or until the end is reached).
+            std::less<PointsToNode *> l;
+            while (I != E && DI != DE && I->first != *DI) {
+                // Advance DI until it is greater than or equal to I->first.
+                while (DI != DE && l(*DI, I->first)) ++DI;
+                if (DI == DE)
+                    break;
+                // Advance I until I->first is greater than or equal to DI.
+                while (I != E && l(I->first, *DI)) ++I;
+            }
+
+            if (DI == DE)
+                I = E;
+        }
+
+        const_iterator I, E;
+        std::set<PointsToNode *>::const_iterator DI, DE;
+    };
+
     inline const_iterator begin() const {
         return s.begin();
     }
@@ -85,6 +137,30 @@ public:
 
     inline const_pointee_iterator pointee_end(const PointsToNode *N) {
         return const_pointee_iterator(s.end(), s.end(), N);
+    }
+
+    inline const_restriction_iterator restriction_begin(const std::set<PointsToNode *>& S) {
+        return const_restriction_iterator(s.begin(), s.end(), S.begin(), S.end());
+    }
+
+    inline const_restriction_iterator restriction_end(const std::set<PointsToNode *>& S) {
+        return const_restriction_iterator(s.end(), s.end(), S.begin(), S.end());
+    }
+
+    inline const_restriction_iterator restriction_begin(const LivenessSet &S) {
+        return const_restriction_iterator(s.begin(), s.end(), S.begin(), S.end());
+    }
+
+    inline const_restriction_iterator restriction_end(const LivenessSet &S) {
+        return const_restriction_iterator(s.end(), s.end(), S.begin(), S.end());
+    }
+
+    inline const_restriction_iterator restriction_begin(const LivenessSet *S) {
+        return const_restriction_iterator(s.begin(), s.end(), S->begin(), S->end());
+    }
+
+    inline const_restriction_iterator restriction_end(const LivenessSet *S) {
+        return const_restriction_iterator(s.end(), s.end(), S->begin(), S->end());
     }
 
     void dump() const;
