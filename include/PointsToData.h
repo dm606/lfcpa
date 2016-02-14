@@ -22,7 +22,7 @@ IntraproceduralPointsTo *copyPointsToMap(IntraproceduralPointsTo *);
 class PointsToData {
     public:
         PointsToData() {}
-        ProcedurePointsTo *getAtFunction(Function *) const;
+        ProcedurePointsTo *getAtFunction(const Function *) const;
         IntraproceduralPointsTo *getPointsTo(const CallString &, Function *);
         bool attemptMakeCyclicCallString(Function *, const CallString &, IntraproceduralPointsTo *);
         bool hasDataForFunction(const Function *) const;

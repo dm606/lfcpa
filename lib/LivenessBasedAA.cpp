@@ -8,7 +8,6 @@
 
 using namespace llvm;
 
-
 namespace {
 struct LivenessBasedAA : public ModulePass, public AliasAnalysis {
     static char ID;
@@ -21,6 +20,14 @@ struct LivenessBasedAA : public ModulePass, public AliasAnalysis {
         InitializeAliasAnalysis(this, &M.getDataLayout());
         analysis.runOnModule(M);
         return false;
+    }
+
+    bool areAllSubNodes(const std::set<PointsToNode *> A, const std::set<PointsToNode *> B) {
+        for (auto N : A)
+            for (auto M : B)
+                if (!N->isSubNodeOf(M))
+                    return false;
+        return true;
     }
 
     AliasResult getResult(const MemoryLocation &LocA,
@@ -39,15 +46,62 @@ struct LivenessBasedAA : public ModulePass, public AliasAnalysis {
         if (A == B)
             return MustAlias;
 
-        std::set<PointsToNode *> ASet = analysis.getPointsToSet(A);
-        std::set<PointsToNode *> BSet = analysis.getPointsToSet(B);
+        const Instruction *AI = dyn_cast<Instruction>(A);
+        const Instruction *BI = dyn_cast<Instruction>(B);
+
+        if (AI == nullptr || BI == nullptr)
+            return MayAlias;
+
+        std::set<PointsToNode *> ASet = analysis.getPointsToSet(AI);
+        std::set<PointsToNode *> BSet = analysis.getPointsToSet(BI);
 
         // If either of the sets are empty, then we don't know what one of the
         // values can point to, and therefore we don't know if they can alias.
         if (ASet.empty() || BSet.empty())
             return MayAlias;
 
-        // If the values may point to the same thing, then they may alias.
+        std::pair<const PointsToNode *, SmallVector<uint64_t, 4>> address;
+        bool possibleMustAlias = true, foundAddress = false;
+        for (PointsToNode *N : ASet) {
+            if (isa<UnknownPointsToNode>(N))
+                return MayAlias;
+
+            if (possibleMustAlias) {
+                auto currentAddress = N->getAddress();
+                if (foundAddress && address != currentAddress)
+                    possibleMustAlias = false;
+                else if (!foundAddress) {
+                    foundAddress = true;
+                    address = currentAddress;
+                }
+            }
+        }
+        for (PointsToNode *N : BSet) {
+            if (isa<UnknownPointsToNode>(N))
+                return MayAlias;
+
+            if (possibleMustAlias) {
+                auto currentAddress = N->getAddress();
+                // ASet contains at least one element.
+                assert(foundAddress);
+                if (address != currentAddress)
+                    possibleMustAlias = false;
+            }
+        }
+
+        if (possibleMustAlias) {
+            // This happens when ASet and BSet each contain exactly one node,
+            // and that node is the same (mod trailing zeros).
+            return MustAlias;
+        }
+
+        // If all of the nodes in one set are subnodes of all of the nodes in
+        // the other, then they partially alias.
+        if (areAllSubNodes(ASet, BSet))
+            return PartialAlias;
+        if (areAllSubNodes(BSet, ASet))
+            return PartialAlias;
+
         for (PointsToNode *N : ASet)
             for (PointsToNode *M : BSet)
                 if (M->isSubNodeOf(N) || N->isSubNodeOf(M))
@@ -60,15 +114,6 @@ struct LivenessBasedAA : public ModulePass, public AliasAnalysis {
     AliasResult alias(const MemoryLocation &LocA,
                       const MemoryLocation &LocB) override {
         AliasResult result = getResult(LocA, LocB);
-
-        AliasResult n = AliasAnalysis::alias(LocA, LocB);
-        if (result == MayAlias && n != MayAlias) {
-            errs() << "BasicAA wins on ";
-            LocA.Ptr->dump();
-            errs() << ", ";
-            LocB.Ptr->dump();
-            errs() << "\n";
-        }
 
         return result == MayAlias ? AliasAnalysis::alias(LocA, LocB) : result;
     }

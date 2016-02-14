@@ -62,6 +62,9 @@ public:
 
         return false;
     }
+    virtual std::pair<const PointsToNode *, SmallVector<uint64_t, 4>> getAddress() const {
+        return std::make_pair(this, SmallVector<uint64_t, 4>());
+    }
 };
 
 
@@ -182,6 +185,25 @@ class GEPPointsToNode : public PointsToNode {
 
         static bool classof(const PointsToNode *N) {
             return N->getKind() == PTNK_GEP;
+        }
+
+        std::pair<const PointsToNode *, SmallVector<uint64_t, 4>> getAddress() const override {
+            // We remove all of the zeros from the end of the list of indices
+            // because they do not affect the address.
+            int stagedZeros = 0;
+            SmallVector<uint64_t, 4> resultIndices;
+            for (const APInt &I : indices) {
+                if (I == 0)
+                    stagedZeros++;
+                else {
+                    while (stagedZeros > 0) {
+                        resultIndices.push_back(0);
+                        --stagedZeros;
+                    }
+                    resultIndices.push_back(I.getZExtValue());
+                }
+            }
+            return std::make_pair(Parent, resultIndices);
         }
 };
 

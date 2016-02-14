@@ -3,7 +3,7 @@
 
 #include "PointsToData.h"
 
-ProcedurePointsTo *PointsToData::getAtFunction(Function *F) const {
+ProcedurePointsTo *PointsToData::getAtFunction(const Function *F) const {
     auto result = data.find(F);
     assert (result != data.end() && "The points-to data does not contain an entry for the specified function.");
     return result->second;

@@ -14,12 +14,24 @@
 #include "PointsToData.h"
 #include "PointsToNode.h"
 
-std::set<PointsToNode *> LivenessPointsTo::getPointsToSet(const Value *V) {
-    PointsToNode *N = factory.getNode(V);
-    auto P = pointsToSets.find(N);
-    if (P == pointsToSets.end())
-        return std::set<PointsToNode *>();
-    return *P->second;
+std::set<PointsToNode *> LivenessPointsTo::getPointsToSet(const Instruction *I) {
+    PointsToNode *N = factory.getNode(I);
+    const BasicBlock *BB = I->getParent();
+    const Function *F = BB->getParent();
+    ProcedurePointsTo *P = data.getAtFunction(F);
+    for (auto p : *P) {
+        if (p.first == CallString::empty()) {
+            auto P = p.second->find(I);
+            assert(P != p.second->end());
+            PointsToRelation *R = P->second.second;
+            std::set<PointsToNode *> s;
+            for (auto Pointee = R->pointee_begin(N), E = R->pointee_end(N); Pointee != E; ++Pointee)
+                s.insert(*Pointee);
+            return s;
+        }
+    }
+
+    llvm_unreachable("Couldn't find any points-to data for I.");
 }
 
 void LivenessPointsTo::subtractKill(LivenessSet &Lin,
@@ -958,29 +970,6 @@ bool LivenessPointsTo::runOnFunctionAt(const CallString& CS,
     }
 }
 
-void LivenessPointsTo::addToPointsToSets(const Function& F, IntraproceduralPointsTo *PT) {
-    PointsToNode *unknown = factory.getUnknown();
-    for (auto I = inst_begin(F), E = inst_end(F); I != E; ++I) {
-        auto P = PT->find(&*I);
-        assert(P != PT->end());
-        PointsToRelation *R = P->second.second;
-        for (std::pair<PointsToNode *, PointsToNode *> p : *R) {
-            if (p.first != unknown && p.second != unknown) {
-                auto Set = pointsToSets.find(p.first);
-                std::set<PointsToNode *> *S = nullptr;
-                if (Set == pointsToSets.end()) {
-                    S = new std::set<PointsToNode *>();
-                    pointsToSets.insert(std::make_pair(p.first, S));
-                }
-                else
-                    S = Set->second;
-
-                S->insert(p.second);
-            }
-        }
-    }
-}
-
 void LivenessPointsTo::runOnModule(Module &M) {
     globals.clear();
     // We assume that globals point to a fixed location.
@@ -999,19 +988,6 @@ void LivenessPointsTo::runOnModule(Module &M) {
             // know what they can point to here, we pass nullptr and work out
             // the correct set during the analysis.
             runOnFunctionAt(CallString::empty(), &F, PT, nullptr);
-
-            ProcedurePointsTo *P = data.getAtFunction(&F);
-            bool found = false;
-            for (auto p : *P) {
-                if (p.first == CallString::empty()) {
-                    addToPointsToSets(F, p.second);
-                    found = true;
-                    break;
-                }
-            }
-
-            (void)found;
-            assert(found && "Didn't find the result of the analysis on F.");
         }
     }
 }
