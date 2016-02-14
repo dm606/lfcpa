@@ -43,26 +43,26 @@ PointsToNode* PointsToNodeFactory::getNode(const Value *V) {
         PointsToNode *Node = nullptr;
         if (const GEPOperator *I = dyn_cast<GEPOperator>(V)) {
             if (I->hasAllConstantIndices()) {
-            PointsToNode *Parent = getNode(I->getPointerOperand());
-            if (!Parent->isSummaryNode()) {
-                // We use a special representation of GEPs which can be analysed to
-                // implement field-sensitivity. Multiple values can map to the same
-                // GEP node (when the GEP has the same pointer operand and indices).
-                for (PointsToNode *Child : Parent->children) {
-                    if (matchGEPNode(I, Child)) {
-                        Node = Child;
-                        break;
+                PointsToNode *Parent = getNode(I->getPointerOperand());
+                if (!Parent->isSummaryNode()) {
+                    // We use a special representation of GEPs which can be analysed to
+                    // implement field-sensitivity. Multiple values can map to the same
+                    // GEP node (when the GEP has the same pointer operand and indices).
+                    for (PointsToNode *Child : Parent->children) {
+                        if (matchGEPNode(I, Child)) {
+                            Node = Child;
+                            break;
+                        }
                     }
-                }
 
-                if (Node == nullptr)
-                    Node = new GEPPointsToNode(Parent, I);
-            }
-            else {
-                // Since the parent is a summary node, we use the parent to
-                // represent all subnodes.
-                Node = Parent;
-            }
+                    if (Node == nullptr)
+                        Node = new GEPPointsToNode(Parent, I);
+                }
+                else {
+                    // Since the parent is a summary node, we use the parent to
+                    // represent all subnodes.
+                    Node = Parent;
+                }
             }
             else {
                 // If I is a GEP which cannot be analysed field-sensitively, then we
