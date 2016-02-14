@@ -46,14 +46,9 @@ struct LivenessBasedAA : public ModulePass, public AliasAnalysis {
         if (A == B)
             return MustAlias;
 
-        const Instruction *AI = dyn_cast<Instruction>(A);
-        const Instruction *BI = dyn_cast<Instruction>(B);
-
-        if (AI == nullptr || BI == nullptr)
-            return MayAlias;
-
-        std::set<PointsToNode *> ASet = analysis.getPointsToSet(AI);
-        std::set<PointsToNode *> BSet = analysis.getPointsToSet(BI);
+        bool allowMustAlias = true;
+        std::set<PointsToNode *> ASet = analysis.getPointsToSet(A, allowMustAlias);
+        std::set<PointsToNode *> BSet = analysis.getPointsToSet(B, allowMustAlias);
 
         // If either of the sets are empty, then we don't know what one of the
         // values can point to, and therefore we don't know if they can alias.
@@ -61,7 +56,7 @@ struct LivenessBasedAA : public ModulePass, public AliasAnalysis {
             return MayAlias;
 
         std::pair<const PointsToNode *, SmallVector<uint64_t, 4>> address;
-        bool possibleMustAlias = true, foundAddress = false;
+        bool possibleMustAlias = allowMustAlias, foundAddress = false;
         for (PointsToNode *N : ASet) {
             if (isa<UnknownPointsToNode>(N))
                 return MayAlias;
@@ -95,12 +90,14 @@ struct LivenessBasedAA : public ModulePass, public AliasAnalysis {
             return MustAlias;
         }
 
-        // If all of the nodes in one set are subnodes of all of the nodes in
-        // the other, then they partially alias.
-        if (areAllSubNodes(ASet, BSet))
-            return PartialAlias;
-        if (areAllSubNodes(BSet, ASet))
-            return PartialAlias;
+        if (allowMustAlias) {
+            // If all of the nodes in one set are subnodes of all of the nodes in
+            // the other, then they partially alias.
+            if (areAllSubNodes(ASet, BSet))
+                return PartialAlias;
+            if (areAllSubNodes(BSet, ASet))
+                return PartialAlias;
+        }
 
         for (PointsToNode *N : ASet)
             for (PointsToNode *M : BSet)

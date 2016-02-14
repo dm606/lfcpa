@@ -16,7 +16,7 @@ class LivenessPointsTo {
 public:
     void runOnModule(Module &);
     ProcedurePointsTo *getPointsTo(Function &) const;
-    std::set<PointsToNode *> getPointsToSet(const Instruction *);
+    std::set<PointsToNode *> getPointsToSet(const Value *, bool &);
 private:
     LivenessSet getRestrictedDef(Instruction *, PointsToRelation *, LivenessSet *);
     void insertPointedToBy(std::set<PointsToNode *> &, Value *, PointsToRelation *);

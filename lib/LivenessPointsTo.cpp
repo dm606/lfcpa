@@ -14,24 +14,54 @@
 #include "PointsToData.h"
 #include "PointsToNode.h"
 
-std::set<PointsToNode *> LivenessPointsTo::getPointsToSet(const Instruction *I) {
-    PointsToNode *N = factory.getNode(I);
-    const BasicBlock *BB = I->getParent();
-    const Function *F = BB->getParent();
-    ProcedurePointsTo *P = data.getAtFunction(F);
-    for (auto p : *P) {
-        if (p.first == CallString::empty()) {
-            auto P = p.second->find(I);
-            assert(P != p.second->end());
-            PointsToRelation *R = P->second.second;
+std::set<PointsToNode *> LivenessPointsTo::getPointsToSet(const Value *V, bool &AllowMustAlias) {
+    if (const Instruction *I = dyn_cast<Instruction>(V)) {
+        PointsToNode *N = factory.getNode(I);
+        const BasicBlock *BB = I->getParent();
+        const Function *F = BB->getParent();
+        ProcedurePointsTo *P = data.getAtFunction(F);
+        for (auto p : *P) {
+            if (p.first == CallString::empty()) {
+                auto P = p.second->find(I);
+                assert(P != p.second->end());
+                PointsToRelation *R = P->second.second;
+                std::set<PointsToNode *> s;
+                for (auto Pointee = R->pointee_begin(N), E = R->pointee_end(N); Pointee != E; ++Pointee)
+                    s.insert(*Pointee);
+                return s;
+            }
+        }
+
+        llvm_unreachable("Couldn't find any points-to data for V.");
+    }
+    else if (const GlobalVariable *G = dyn_cast<GlobalVariable>(V)) {
+        std::set<PointsToNode *> s;
+        s.insert(factory.getGlobalNode(G));
+        return s;
+    }
+    else if (const GEPOperator *GEP = dyn_cast<GEPOperator>(V)) {
+        if (GEP->hasAllConstantIndices()) {
+            if (const GlobalVariable *Base = dyn_cast<GlobalVariable>(GEP->getPointerOperand())) {
+                std::set<PointsToNode *> s;
+                PointsToNode *Global = factory.getGlobalNode(Base);
+                s.insert(factory.getIndexedNode(Global, GEP));
+                return s;
+            }
+        }
+        else {
             std::set<PointsToNode *> s;
-            for (auto Pointee = R->pointee_begin(N), E = R->pointee_end(N); Pointee != E; ++Pointee)
-                s.insert(*Pointee);
+            // We represent non-constant GEPs by the node corresponding to the
+            // pointer operand. Note that we cannot use this result as the basis
+            // of a PartialAlias or MustAlias result.
+            s.insert(factory.getNode(GEP->getPointerOperand()));
+            AllowMustAlias = false;
             return s;
         }
     }
 
-    llvm_unreachable("Couldn't find any points-to data for I.");
+    // If we can't determine what V can point to, return the empty set (i.e.
+    // "don't know").
+    return std::set<PointsToNode *>();
 }
 
 void LivenessPointsTo::subtractKill(LivenessSet &Lin,
@@ -216,7 +246,7 @@ std::set<PointsToNode *> LivenessPointsTo::getPointee(Instruction *I, PointsToRe
         insertPointedToBy(s, SI->getTrueValue(), Ain);
         insertPointedToBy(s, SI->getFalseValue(), Ain);
     }
-    else if (GetElementPtrInst *GEP = dyn_cast<GetElementPtrInst>(I)) {
+    else if (GEPOperator *GEP = dyn_cast<GEPOperator>(I)) {
         PointsToNode *GEPNode = factory.getNode(GEP);
         // If the node is not a summary node, then we are treating the GEP
         // field-sensitively.

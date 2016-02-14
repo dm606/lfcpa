@@ -88,7 +88,7 @@ PointsToNode* PointsToNodeFactory::getAllocaNode(AllocaInst *I) {
     }
 }
 
-PointsToNode* PointsToNodeFactory::getGlobalNode(GlobalVariable *V) {
+PointsToNode* PointsToNodeFactory::getGlobalNode(const GlobalVariable *V) {
     auto KV = globalMap.find(V);
     if (KV != globalMap.end())
         return KV->second;
@@ -99,12 +99,12 @@ PointsToNode* PointsToNodeFactory::getGlobalNode(GlobalVariable *V) {
     }
 }
 
-PointsToNode *PointsToNodeFactory::getIndexedNode(PointsToNode *A, GetElementPtrInst *GEP) {
+PointsToNode *PointsToNodeFactory::getIndexedNode(PointsToNode *A, const GEPOperator *GEP) {
     assert(GEP->hasAllConstantIndices());
     for (PointsToNode *Child : A->children)
-        if (matchGEPNode(cast<GEPOperator>(GEP), Child))
+        if (matchGEPNode(GEP, Child))
             return Child;
 
     // We create a new GEP node which has A as its parent.
-    return new GEPPointsToNode(A, GEP->getResultElementType(), GEP->idx_begin(), GEP->idx_end());
+    return new GEPPointsToNode(A, GEP->getType(), GEP->idx_begin(), GEP->idx_end());
 }

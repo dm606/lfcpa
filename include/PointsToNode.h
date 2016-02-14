@@ -118,7 +118,7 @@ class GlobalPointsToNode : public PointsToNode {
         std::string stdName;
         bool isPointer;
     public:
-        GlobalPointsToNode(GlobalVariable *G) : PointsToNode(PTNK_Global) {
+        GlobalPointsToNode(const GlobalVariable *G) : PointsToNode(PTNK_Global) {
            stdName = "global:" + G->getName().str();
            name = StringRef(stdName);
            isPointer = G->getValueType()->isPointerTy();

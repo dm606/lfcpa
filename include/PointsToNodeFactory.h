@@ -18,8 +18,8 @@ class PointsToNodeFactory {
         PointsToNode *getUnknown();
         PointsToNode *getNode(const Value *);
         PointsToNode *getAllocaNode(AllocaInst *);
-        PointsToNode *getGlobalNode(GlobalVariable *);
-        PointsToNode *getIndexedNode(PointsToNode *, GetElementPtrInst *);
+        PointsToNode *getGlobalNode(const GlobalVariable *);
+        PointsToNode *getIndexedNode(PointsToNode *, const GEPOperator *);
 };
 
 #endif
