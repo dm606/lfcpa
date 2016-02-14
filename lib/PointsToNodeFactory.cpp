@@ -40,9 +40,9 @@ PointsToNode* PointsToNodeFactory::getNode(const Value *V) {
     if (KV != map.end())
         return KV->second;
     else {
-        const GEPOperator *I = dyn_cast<GEPOperator>(V);
         PointsToNode *Node = nullptr;
-        if (I != nullptr && I->hasAllConstantIndices()) {
+        if (const GEPOperator *I = dyn_cast<GEPOperator>(V)) {
+            if (I->hasAllConstantIndices()) {
             PointsToNode *Parent = getNode(I->getPointerOperand());
             if (!Parent->isSummaryNode()) {
                 // We use a special representation of GEPs which can be analysed to
@@ -63,9 +63,8 @@ PointsToNode* PointsToNodeFactory::getNode(const Value *V) {
                 // represent all subnodes.
                 Node = Parent;
             }
-        }
-        else {
-            if (I != nullptr) {
+            }
+            else {
                 // If I is a GEP which cannot be analysed field-sensitively, then we
                 // return the node correspoinding to the pointer which is being
                 // indexed, but since we cannot perform strong updates, treat it as
@@ -73,15 +72,22 @@ PointsToNode* PointsToNodeFactory::getNode(const Value *V) {
                 Node = getNode(I->getPointerOperand());
                 Node->markAsSummaryNode();
             }
-            else
-                Node = new ValuePointsToNode(V);
         }
+        else {
+            PointsToNode *Pointee = nullptr;
+            if (const GlobalVariable *G = dyn_cast<GlobalVariable>(V))
+                Pointee = getGlobalNode(G);
+            else if (const AllocaInst *AI = dyn_cast<AllocaInst>(V))
+                Pointee = getAllocaNode(AI);
+            Node = new ValuePointsToNode(V, Pointee);
+        }
+
         map.insert(std::make_pair(V, Node));
         return Node;
     }
 }
 
-PointsToNode* PointsToNodeFactory::getAllocaNode(AllocaInst *I) {
+PointsToNode* PointsToNodeFactory::getAllocaNode(const AllocaInst *I) {
     auto KV = allocaMap.find(I);
     if (KV != allocaMap.end())
         return KV->second;

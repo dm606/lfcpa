@@ -43,6 +43,10 @@ public:
     virtual bool hasPointerType() const { return false; }
     virtual bool multipleStackFrames() const { return false; }
     virtual bool isAlloca() const { return false; }
+    virtual bool singlePointee() const { return false; }
+    virtual PointsToNode *getSinglePointee() const {
+        llvm_unreachable("This node doesn't always have a single pointee.");
+    }
     inline void markAsSummaryNode() {
         summaryNode = true;
     }
@@ -91,8 +95,9 @@ class ValuePointsToNode : public PointsToNode {
         std::string stdName;
         const Value *V;
         bool isPointer, globalAddress, userOrArg;
+        PointsToNode *Pointee;
     public:
-        ValuePointsToNode(const Value *V) : PointsToNode(PTNK_Value), V(V) {
+        ValuePointsToNode(const Value *V, PointsToNode *Pointee) : PointsToNode(PTNK_Value), V(V), Pointee(Pointee) {
             assert(V != nullptr);
             name = V->getName();
             if (name == "") {
@@ -104,9 +109,16 @@ class ValuePointsToNode : public PointsToNode {
             userOrArg = isa<User>(V) || isa<Argument>(V);
         }
 
+        ValuePointsToNode(const Value *V) : ValuePointsToNode(V, nullptr) {}
+
         bool isGlobalAddress() const override { return globalAddress; }
         bool hasPointerType() const override { return isPointer; }
         bool multipleStackFrames() const override { return userOrArg; }
+        bool singlePointee() const override { return Pointee != nullptr; }
+        PointsToNode *getSinglePointee() const override {
+            assert(Pointee != nullptr);
+            return Pointee;
+        }
 
         static bool classof(const PointsToNode *N) {
             return N->getKind() == PTNK_Value;
@@ -136,7 +148,7 @@ class AllocaPointsToNode : public PointsToNode {
         std::string stdName;
         bool isPointer;
     public:
-        AllocaPointsToNode(AllocaInst *AI) : PointsToNode(PTNK_Alloca) {
+        AllocaPointsToNode(const AllocaInst *AI) : PointsToNode(PTNK_Alloca) {
            stdName = "alloca:" + AI->getName().str();
            name = StringRef(stdName);
            isPointer = AI->getAllocatedType()->isPointerTy();
