@@ -206,11 +206,11 @@ void LivenessPointsTo::insertPointedToBy(std::set<PointsToNode *> &S,
 }
 
 bool pointsToUnknown(PointsToNode *N, PointsToRelation *R) {
-    auto Pred = [&](std::pair<PointsToNode *, PointsToNode *> p) {
-        return p.first == N && isa<UnknownPointsToNode>(p.second);
+    auto Pred = [&](PointsToNode *N) {
+        return isa<UnknownPointsToNode>(N);
     };
-    auto E = R->end();
-    return std::find_if(R->begin(), E, Pred) != E;
+    auto E = R->pointee_end(N);
+    return std::find_if(R->pointee_begin(N), E, Pred) != E;
 }
 
 std::set<PointsToNode *> LivenessPointsTo::getPointee(Instruction *I, PointsToRelation *Ain) {

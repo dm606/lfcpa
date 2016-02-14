@@ -16,6 +16,7 @@ public:
     public:
         typedef std::forward_iterator_tag iterator_category;
         typedef PointsToNode* value_type;
+        typedef signed difference_type;
         typedef PointsToNode* const* pointer;
         typedef PointsToNode* const& reference;
 
@@ -53,6 +54,7 @@ public:
     public:
         typedef std::forward_iterator_tag iterator_category;
         typedef std::pair<PointsToNode *, PointsToNode *> value_type;
+        typedef signed difference_type;
         typedef std::pair<PointsToNode *, PointsToNode *> const* pointer;
         typedef std::pair<PointsToNode *, PointsToNode *> const& reference;
 
@@ -104,6 +106,7 @@ public:
     public:
         typedef std::forward_iterator_tag iterator_category;
         typedef std::pair<PointsToNode *, PointsToNode *> value_type;
+        typedef signed difference_type;
         typedef std::pair<PointsToNode *, PointsToNode *> const* pointer;
         typedef std::pair<PointsToNode *, PointsToNode *> const& reference;
 
@@ -135,7 +138,7 @@ public:
     private:
         const_iterator I, E;
     };
-
+/*
     inline const_iterator begin() const {
         return s.begin();
     }
@@ -143,7 +146,7 @@ public:
     inline const_iterator end() const {
        return s.end();
     }
-
+*/
     inline void clear() {
         s.clear();
     }
