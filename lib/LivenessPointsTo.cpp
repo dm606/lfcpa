@@ -400,7 +400,7 @@ bool LivenessPointsTo::computeAin(Instruction *I, Function *F, PointsToRelation 
     }
     if (s != *Ain) {
         Ain->clear();
-        Ain->insert(s.begin(), s.end());
+        Ain->insertAll(s);
         return true;
     }
 
@@ -673,7 +673,7 @@ bool LivenessPointsTo::getCalledFunctionResult(const CallString &CS, Function *F
         if (isa<ReturnInst>(Inst)) {
             auto J = PT->find(Inst);
             assert(J != PT->end());
-            aout.insert(J->second.second->begin(), J->second.second->end());
+            aout.insertAll(*J->second.second);
         }
     }
     Result.second = aout;
@@ -831,7 +831,7 @@ void LivenessPointsTo::runOnFunction(Function *F, const CallString &CS, Intrapro
                     insertReachablePT(CI, s, calledFunctionAout, instruction_ain, returnValues);
                     if (s != *instruction_aout) {
                         instruction_aout->clear();
-                        instruction_aout->insert(s.begin(), s.end());
+                        instruction_aout->insertAll(s);
                         addSuccsToWorklist = true;
                     }
 
@@ -879,7 +879,7 @@ void LivenessPointsTo::runOnFunction(Function *F, const CallString &CS, Intrapro
 
                 if (s != *instruction_aout) {
                     instruction_aout->clear();
-                    instruction_aout->insert(s.begin(), s.end());
+                    instruction_aout->insertAll(s);
                     addSuccsToWorklist = true;
                 }
             }
@@ -912,7 +912,7 @@ void LivenessPointsTo::runOnFunction(Function *F, const CallString &CS, Intrapro
             unionCrossProduct(s, def, pointee);
             if (s != *instruction_aout) {
                 instruction_aout->clear();
-                instruction_aout->insert(s.begin(), s.end());
+                instruction_aout->insertAll(s);
                 addSuccsToWorklist = true;
             }
         }

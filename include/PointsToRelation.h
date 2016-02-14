@@ -138,15 +138,11 @@ public:
     private:
         const_iterator I, E;
     };
-/*
-    inline const_iterator begin() const {
-        return s.begin();
+
+    inline void insertAll(PointsToRelation &R) {
+        s.insert(R.s.begin(), R.s.end());
     }
 
-    inline const_iterator end() const {
-       return s.end();
-    }
-*/
     inline void clear() {
         s.clear();
     }
@@ -156,10 +152,6 @@ public:
             return false;
 
         return s.insert(N).second;
-    }
-
-    inline void insert(iterator begin, iterator end) {
-        s.insert(begin, end);
     }
 
     inline bool operator==(const PointsToRelation &R) const {
