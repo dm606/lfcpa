@@ -45,6 +45,11 @@ struct LivenessBasedAA : public ModulePass, public AliasAnalysis {
             return NoAlias;
         if (A == B)
             return MustAlias;
+        if (isa<UndefValue>(A) || isa<UndefValue>(B)) {
+            // We don't know what undef points to, but we are allowed to assume
+            // that it doesn't alias with anything.
+            return NoAlias;
+        }
 
         bool allowMustAlias = true;
         std::set<PointsToNode *> ASet = analysis.getPointsToSet(A, allowMustAlias);

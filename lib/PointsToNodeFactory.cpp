@@ -32,6 +32,10 @@ bool PointsToNodeFactory::matchGEPNode(const GEPOperator *I, const PointsToNode 
 
 PointsToNode* PointsToNodeFactory::getNode(const Value *V) {
     assert(V != nullptr);
+
+    if (isa<UndefValue>(V))
+        return &unknown;
+
     auto KV = map.find(V);
     if (KV != map.end())
         return KV->second;
