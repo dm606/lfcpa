@@ -169,9 +169,10 @@ class GEPPointsToNode : public PointsToNode {
         bool pointerType;
         SmallVector<APInt, 8> indices;
         std::string stdName;
+        PointsToNode *Pointee;
         friend class PointsToNodeFactory;
     public:
-        GEPPointsToNode(PointsToNode *Parent, const Type *Type, User::const_op_iterator I, User::const_op_iterator E) : PointsToNode(PTNK_GEP), Parent(Parent) {
+        GEPPointsToNode(PointsToNode *Parent, const Type *Type, User::const_op_iterator I, User::const_op_iterator E, PointsToNode *Pointee) : PointsToNode(PTNK_GEP), Parent(Parent), Pointee(Pointee) {
             pointerType = Type->isPointerTy();
 
             std::stringstream ns;
@@ -187,13 +188,20 @@ class GEPPointsToNode : public PointsToNode {
             Parent->children.push_back(this);
             stdName = ns.str();
             name = StringRef(stdName);
+
+            assert(Pointee == nullptr || Parent->singlePointee());
         }
 
-        GEPPointsToNode(PointsToNode *Parent, const GEPOperator *V) : GEPPointsToNode(Parent, V->getType(), V->idx_begin(), V->idx_end()) { }
+        GEPPointsToNode(PointsToNode *Parent, const GEPOperator *V, PointsToNode *Pointee) : GEPPointsToNode(Parent, V->getType(), V->idx_begin(), V->idx_end(), Pointee) { }
 
         bool hasPointerType() const override { return pointerType; }
         bool multipleStackFrames() const override { return true; }
         bool isAlloca() const override { return Parent->isAlloca(); }
+        bool singlePointee() const override { return Pointee != nullptr; }
+        PointsToNode *getSinglePointee() const override {
+            assert(Pointee != nullptr);
+            return Pointee;
+        }
 
         static bool classof(const PointsToNode *N) {
             return N->getKind() == PTNK_GEP;

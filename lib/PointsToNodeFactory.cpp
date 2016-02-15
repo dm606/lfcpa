@@ -30,6 +30,21 @@ bool PointsToNodeFactory::matchGEPNode(const GEPOperator *I, const PointsToNode 
     return false;
 }
 
+PointsToNode *PointsToNodeFactory::getGEPNode(const GEPOperator *I, PointsToNode *Parent, PointsToNode *Pointee) const {
+    // We use a special representation of GEPs which can be analysed to
+    // implement field-sensitivity. Multiple values can map to the same GEP node
+    // (when the GEP has the same pointer operand and indices).  Note that
+    // Parent might not be the node corresponding to the pointer operand of the
+    // GEP -- it may be the node that it points to.
+    for (PointsToNode *Child : Parent->children) {
+        if (matchGEPNode(I, Child)) {
+            return Child;
+        }
+    }
+
+    return new GEPPointsToNode(Parent, I, Pointee);
+}
+
 PointsToNode* PointsToNodeFactory::getNode(const Value *V) {
     assert(V != nullptr);
 
@@ -45,18 +60,8 @@ PointsToNode* PointsToNodeFactory::getNode(const Value *V) {
             if (I->hasAllConstantIndices()) {
                 PointsToNode *Parent = getNode(I->getPointerOperand());
                 if (!Parent->isSummaryNode()) {
-                    // We use a special representation of GEPs which can be analysed to
-                    // implement field-sensitivity. Multiple values can map to the same
-                    // GEP node (when the GEP has the same pointer operand and indices).
-                    for (PointsToNode *Child : Parent->children) {
-                        if (matchGEPNode(I, Child)) {
-                            Node = Child;
-                            break;
-                        }
-                    }
-
-                    if (Node == nullptr)
-                        Node = new GEPPointsToNode(Parent, I);
+                    PointsToNode *Pointee = Parent->singlePointee() ? getGEPNode(I, Parent->getSinglePointee(), nullptr) : nullptr;
+                    Node = getGEPNode(I, Parent, Pointee);
                 }
                 else {
                     // Since the parent is a summary node, we use the parent to
@@ -111,10 +116,11 @@ PointsToNode* PointsToNodeFactory::getGlobalNode(const GlobalVariable *V) {
 
 PointsToNode *PointsToNodeFactory::getIndexedNode(PointsToNode *A, const GEPOperator *GEP) {
     assert(GEP->hasAllConstantIndices());
+    assert(!A->singlePointee() && "getIndexedNode cannot be used on GlobalVariables or AllocaInsts");
     for (PointsToNode *Child : A->children)
         if (matchGEPNode(GEP, Child))
             return Child;
 
     // We create a new GEP node which has A as its parent.
-    return new GEPPointsToNode(A, GEP->getType(), GEP->idx_begin(), GEP->idx_end());
+    return new GEPPointsToNode(A, GEP->getType(), GEP->idx_begin(), GEP->idx_end(), nullptr);
 }
