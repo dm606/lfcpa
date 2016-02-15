@@ -178,20 +178,28 @@ LivenessSet LivenessPointsTo::getRestrictedDef(Instruction *I,
                 s.insert(*P);
     }
     else {
-        switch (I->getOpcode()) {
-            case Instruction::Alloca:
-            case Instruction::GetElementPtr:
-            case Instruction::Load:
-            case Instruction::PHI:
-            case Instruction::Select:
-                {
-                    PointsToNode *N = factory.getNode(I);
-                    if (Lout->find(N) != Lout->end())
-                        s.insert(N);
-                }
-                break;
-            default:
-                break;
+        // Deal with cases where either the instruction itself is defined or
+        // nothing is.
+
+        PointsToNode *N = factory.getNode(I);
+        if (N->singlePointee()) {
+            // N will always point to the single pointee here, so there is no
+            // need to define it.
+        }
+        else {
+            switch (I->getOpcode()) {
+                case Instruction::GetElementPtr:
+                case Instruction::Load:
+                case Instruction::PHI:
+                case Instruction::Select:
+                    {
+                        if (Lout->find(N) != Lout->end())
+                            s.insert(N);
+                    }
+                    break;
+                default:
+                    break;
+            }
         }
     }
     return s;
@@ -293,7 +301,7 @@ std::set<PointsToNode *> LivenessPointsTo::getPointee(Instruction *I, PointsToRe
     return s;
 }
 
-void LivenessPointsTo::unionCrossProduct(PointsToRelation &Result,
+void unionCartesianProduct(PointsToRelation &Result,
                                          LivenessSet &A,
                                          std::set<PointsToNode *> &B) {
     for (auto &X : A)
@@ -906,8 +914,12 @@ void LivenessPointsTo::runOnFunction(Function *F, const CallString &CS, Intrapro
             unionRelationRestriction(s, instruction_ain, &notKilled);
             LivenessSet def =
                 getRestrictedDef(I, instruction_ain, instruction_lout);
-            std::set<PointsToNode *> pointee = getPointee(I, instruction_ain);
-            unionCrossProduct(s, def, pointee);
+            // There is no need to call getPointee if def is empty because the
+            // cartesian product will be empty anyway.
+            if (!def.empty()) {
+                std::set<PointsToNode *> pointee = getPointee(I, instruction_ain);
+                unionCartesianProduct(s, def, pointee);
+            }
             if (s != *instruction_aout) {
                 instruction_aout->clear();
                 instruction_aout->insertAll(s);
@@ -1000,17 +1012,14 @@ bool LivenessPointsTo::runOnFunctionAt(const CallString& CS,
 
 void LivenessPointsTo::runOnModule(Module &M) {
     globals.clear();
-    // We assume that globals point to a fixed location.
-    PointsToRelation pointsto;
     for (auto I = M.global_begin(), E = M.global_end(); I != E; ++I) {
         auto N = factory.getNode(&*I);
-        pointsto.insert(std::make_pair(N, factory.getGlobalNode(&*I)));
         globals.insert(N);
     }
 
     for (Function &F : M) {
         if (!F.isDeclaration()) {
-            PointsToRelation *PT = new PointsToRelation(pointsto);
+            PointsToRelation *PT = new PointsToRelation();
             // Note that the lout for the return instructions should contain all
             // globals, and everything that they can point to. Since we don't
             // know what they can point to here, we pass nullptr and work out

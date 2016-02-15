@@ -150,6 +150,11 @@ public:
     }
 
     inline bool insert(const std::pair<PointsToNode *, PointsToNode *> &N) {
+        if (N.first->singlePointee()) {
+            assert(N.first->getSinglePointee() == N.second || isa<UnknownPointsToNode>(N.second) && "The pair given is incorrect.");
+            return false;
+        }
+
         if (isa<UnknownPointsToNode>(N.first) || !N.first->hasPointerType())
             return false;
 

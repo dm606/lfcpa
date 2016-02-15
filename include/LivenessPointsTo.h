@@ -21,7 +21,6 @@ private:
     LivenessSet getRestrictedDef(Instruction *, PointsToRelation *, LivenessSet *);
     void insertPointedToBy(std::set<PointsToNode *> &, Value *, PointsToRelation *);
     std::set<PointsToNode *> getPointee(Instruction *, PointsToRelation *);
-    void unionCrossProduct(PointsToRelation &, LivenessSet &, std::set<PointsToNode *> &);
     void subtractKill(LivenessSet &, Instruction *, PointsToRelation *);
     void unionRef(LivenessSet &, Instruction *, LivenessSet *, PointsToRelation *);
     void unionRelationRestriction(PointsToRelation &, PointsToRelation *, LivenessSet *);
