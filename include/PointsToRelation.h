@@ -141,43 +141,6 @@ public:
         std::pair<PointsToNode *, PointsToNode *> singlePointeePair;
     };
 
-    class const_global_iterator {
-    public:
-        typedef std::forward_iterator_tag iterator_category;
-        typedef std::pair<PointsToNode *, PointsToNode *> value_type;
-        typedef signed difference_type;
-        typedef std::pair<PointsToNode *, PointsToNode *> const* pointer;
-        typedef std::pair<PointsToNode *, PointsToNode *> const& reference;
-
-        const_global_iterator(const_iterator I, const_iterator E) : E(E) {
-            while (I != E && !I->first->isGlobalAddress()) {
-                ++I;
-            }
-            this->I = I;
-        }
-
-        inline reference operator*() const { return *I; }
-        inline pointer operator->() const { return &operator*(); }
-
-        inline bool operator==(const const_global_iterator &Y) const {
-            return I == Y.I || (I == E && Y.I == Y.E);
-        }
-        inline bool operator!=(const const_global_iterator &Y) const {
-            return !operator==(Y);
-        }
-
-        const_global_iterator &operator++() {
-            do {
-                ++I;
-            } while (I != E && !I->first->isGlobalAddress());
-            return *this;
-        }
-
-        inline bool atEnd() const { return I == E; }
-    private:
-        const_iterator I, E;
-    };
-
     inline void insertAll(PointsToRelation &R) {
         s.insert(R.s.begin(), R.s.end());
     }
@@ -237,14 +200,6 @@ public:
 
     inline const_restriction_iterator restriction_end(const LivenessSet *S) {
         return const_restriction_iterator(s.end(), s.end(), S->begin(), S->end());
-    }
-
-    inline const_global_iterator global_begin() {
-        return const_global_iterator(s.begin(), s.end());
-    }
-
-    inline const_global_iterator global_end() {
-        return const_global_iterator(s.end(), s.end());
     }
 
     void dump() const;
