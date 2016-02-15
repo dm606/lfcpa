@@ -151,7 +151,7 @@ public:
 
     inline bool insert(const std::pair<PointsToNode *, PointsToNode *> &N) {
         if (N.first->singlePointee()) {
-            assert(N.first->getSinglePointee() == N.second || isa<UnknownPointsToNode>(N.second) && "The pair given is incorrect.");
+            assert((N.first->getSinglePointee() == N.second || isa<UnknownPointsToNode>(N.second)) && "The pair given is incorrect.");
             return false;
         }
 
