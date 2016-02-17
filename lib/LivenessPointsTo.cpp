@@ -423,7 +423,7 @@ LivenessSet *LivenessPointsTo::getReachable(Function *Callee, CallInst *CI, Poin
     // points-to relation.
     LivenessSet reachable;
     PointsToNode *CallNode = factory.getNode(CI);
-    bool isCallInstLive = CallNode->hasPointerType() || Lout->find(CallNode) != Lout->end();
+    bool isCallInstLive = !CallNode->hasPointerType() || Lout->find(CallNode) != Lout->end();
 
     std::function<void(PointsToNode *)> insertReachable = [&](PointsToNode *N) {
         if (N->singlePointee() || reachable.insert(N)) {
