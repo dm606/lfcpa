@@ -463,9 +463,6 @@ LivenessSet *LivenessPointsTo::getReachable(Function *Callee, CallInst *CI, Poin
     // Then add the global variables
     for (auto N : globals)
         insertReachable(N);
-    for (auto N : *Lout)
-        if (N->isGlobalAddress())
-            insertReachable(N);
 
     for (auto N : *Lout)
         if (reachable.find(N) != reachable.end())
