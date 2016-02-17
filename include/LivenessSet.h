@@ -46,14 +46,14 @@ class LivenessSet {
         }
 
         inline bool insert(PointsToNode *N) {
-            if (isa<UnknownPointsToNode>(N))
+            if (!N->hasPointerType() || isa<UnknownPointsToNode>(N))
                 return false;
 
             return s.insert(N).second;
         }
 
-        inline void insert (iterator begin, iterator end) {
-            s.insert(begin, end);
+        inline void insertAll(LivenessSet &L) {
+            s.insert(L.begin(), L.end());
         }
 
         inline bool operator==(const LivenessSet &R) const {

@@ -118,7 +118,8 @@ void LivenessPointsTo::unionRef(LivenessSet& Lin,
     if (LoadInst *LI = dyn_cast<LoadInst>(I)) {
         // We only consider the pointer and the possible values in memory to be
         // ref'd if the load is live.
-        if (Lout->find(factory.getNode(I)) != Lout->end()) {
+        PointsToNode *N = factory.getNode(I);
+        if (N->hasPointerType() || Lout->find(N) != Lout->end()) {
             Value *Ptr = LI->getPointerOperand();
             PointsToNode *PtrNode = factory.getNode(Ptr);
             Lin.insert(PtrNode);
@@ -134,7 +135,7 @@ void LivenessPointsTo::unionRef(LivenessSet& Lin,
         // We only consider the stored value to be ref'd if at least one of the
         // values that can be pointed to by x is live.
         for (auto P = Ain->pointee_begin(PtrNode), E = Ain->pointee_end(PtrNode); P != E; ++P) {
-            if (Lout->find(*P) != Lout->end()) {
+            if ((*P)->hasPointerType() || Lout->find(*P) != Lout->end()) {
                 Lin.insert(factory.getNode(SI->getValueOperand()));
                 break;
             }
@@ -348,7 +349,7 @@ void LivenessPointsTo::computeLout(Instruction *I, LivenessSet* Lout, Intraproce
             auto succ_result = Result->find(Succ);
             assert(succ_result != Result->end());
             auto succ_lin = succ_result->second.first;
-            Lout->insert(succ_lin->begin(), succ_lin->end());
+            Lout->insertAll(*succ_lin);
         }
     }
     else {
@@ -360,7 +361,7 @@ void LivenessPointsTo::computeLout(Instruction *I, LivenessSet* Lout, Intraproce
         auto succ_lin = succ_result->second.first;
         if (*succ_lin != *Lout) {
             Lout->clear();
-            Lout->insert(succ_lin->begin(), succ_lin->end());
+            Lout->insertAll(*succ_lin);
         }
     }
 }
@@ -370,7 +371,7 @@ bool LivenessPointsTo::computeAin(Instruction *I, Function *F, PointsToRelation 
     PointsToRelation s;
     if (I == &*inst_begin(F)) {
         // If this is the first instruction of the function, then apart from
-        // the data in entry, we don't know what anything points to ain
+        // the data in entry, we don't know what anything points to. ain
         // already contains the data in entry, so add the remaining pairs.
         s = *Ain;
         for (PointsToNode *N : *Lin) {
@@ -586,7 +587,7 @@ void LivenessPointsTo::insertReachableDeclaration(CallInst *CI, LivenessSet &N, 
     for (Value *V : CI->arg_operands())
         insertReachable(factory.getNode(V));
 
-    N.insert(reachable.begin(), reachable.end());
+    N.insertAll(reachable);
 }
 
 void LivenessPointsTo::insertReachablePT(CallInst *CI, PointsToRelation &N, PointsToRelation &Aout, PointsToRelation *Ain, LivenessSet &ReturnValues) {
@@ -820,7 +821,7 @@ void LivenessPointsTo::runOnFunction(Function *F, const CallString &CS, Intrapro
                     // the predecessors of the current instruction to the worklist.
                     if (n != *instruction_lin) {
                         instruction_lin->clear();
-                        instruction_lin->insert(n.begin(), n.end());
+                        instruction_lin->insertAll(n);
                         addPredsToWorklist = true;
                     }
 
@@ -862,7 +863,7 @@ void LivenessPointsTo::runOnFunction(Function *F, const CallString &CS, Intrapro
                 // the predecessors of the current instruction to the worklist.
                 if (n != *instruction_lin) {
                     instruction_lin->clear();
-                    instruction_lin->insert(n.begin(), n.end());
+                    instruction_lin->insertAll(n);
                     addPredsToWorklist = true;
                 }
 
@@ -893,7 +894,7 @@ void LivenessPointsTo::runOnFunction(Function *F, const CallString &CS, Intrapro
         else {
             // Compute lin for the current instruction.
             LivenessSet n;
-            n.insert(instruction_lout->begin(), instruction_lout->end());
+            n.insertAll(*instruction_lout);
             subtractKill(n, I, instruction_ain);
             unionRef(n, I, instruction_lout, instruction_ain);
             // If the two sets are the same, then no changes need to be made to lin,
@@ -901,7 +902,7 @@ void LivenessPointsTo::runOnFunction(Function *F, const CallString &CS, Intrapro
             // the predecessors of the current instruction to the worklist.
             if (n != *instruction_lin) {
                 instruction_lin->clear();
-                instruction_lin->insert(n.begin(), n.end());
+                instruction_lin->insertAll(n);
                 addPredsToWorklist = true;
             }
 
