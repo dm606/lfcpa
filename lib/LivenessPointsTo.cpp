@@ -119,7 +119,7 @@ void LivenessPointsTo::unionRef(LivenessSet& Lin,
         // We only consider the pointer and the possible values in memory to be
         // ref'd if the load is live.
         PointsToNode *N = factory.getNode(I);
-        if (N->hasPointerType() || Lout->find(N) != Lout->end()) {
+        if (!N->hasPointerType() || Lout->find(N) != Lout->end()) {
             Value *Ptr = LI->getPointerOperand();
             PointsToNode *PtrNode = factory.getNode(Ptr);
             Lin.insert(PtrNode);
@@ -135,7 +135,7 @@ void LivenessPointsTo::unionRef(LivenessSet& Lin,
         // We only consider the stored value to be ref'd if at least one of the
         // values that can be pointed to by x is live.
         for (auto P = Ain->pointee_begin(PtrNode), E = Ain->pointee_end(PtrNode); P != E; ++P) {
-            if ((*P)->hasPointerType() || Lout->find(*P) != Lout->end()) {
+            if (!(*P)->hasPointerType() || Lout->find(*P) != Lout->end()) {
                 Lin.insert(factory.getNode(SI->getValueOperand()));
                 break;
             }
