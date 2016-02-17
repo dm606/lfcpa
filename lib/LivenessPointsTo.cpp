@@ -17,6 +17,9 @@
 std::set<PointsToNode *> LivenessPointsTo::getPointsToSet(const Value *V, bool &AllowMustAlias) {
     if (const Instruction *I = dyn_cast<Instruction>(V)) {
         PointsToNode *N = factory.getNode(I);
+        // If N is a summary node, the data may include pointees of fields.
+        if (N->isSummaryNode())
+            AllowMustAlias = false;
         const BasicBlock *BB = I->getParent();
         const Function *F = BB->getParent();
         ProcedurePointsTo *P = data.getAtFunction(F);
