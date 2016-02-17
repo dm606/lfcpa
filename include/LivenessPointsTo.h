@@ -30,16 +30,16 @@ private:
     PointsToRelation * getReachablePT(Function *, CallInst *, PointsToRelation *);
     void insertReachable(Function *, CallInst *, LivenessSet &, LivenessSet &, PointsToRelation *);
     void insertReachableDeclaration(CallInst *, LivenessSet &, PointsToRelation *);
-    void insertReachablePT(CallInst *, PointsToRelation &, PointsToRelation &, PointsToRelation *, LivenessSet &);
+    void insertReachablePT(CallInst *, PointsToRelation &, PointsToRelation &, PointsToRelation *, std::set<PointsToNode *>&);
     bool getCalledFunctionResult(const CallString &, Function *, std::pair<LivenessSet, PointsToRelation>&);
-    LivenessSet getReturnValues(const Function *);
+    std::set<PointsToNode *> getReturnValues(const Function *);
     void runOnFunction(Function *, const CallString &, IntraproceduralPointsTo *, PointsToRelation *, LivenessSet *, SmallVector<std::tuple<CallInst *, Function *, PointsToRelation *, LivenessSet *>, 8> &);
     bool runOnFunctionAt(const CallString &, Function *, PointsToRelation *, LivenessSet *);
     void addNotInvalidatedRestricted(PointsToRelation &, PointsToRelation *, CallInst *, LivenessSet *);
     LivenessSet getInvalidatedNodes(PointsToRelation *, CallInst *);
     PointsToData data;
     PointsToNodeFactory factory;
-    LivenessSet globals;
+    std::set<PointsToNode *> globals;
 };
 
 #endif

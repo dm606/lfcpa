@@ -119,7 +119,7 @@ void LivenessPointsTo::unionRef(LivenessSet& Lin,
         // We only consider the pointer and the possible values in memory to be
         // ref'd if the load is live.
         PointsToNode *N = factory.getNode(I);
-        if (!N->hasPointerType() || Lout->find(N) != Lout->end()) {
+        if (N->singlePointee() || !N->hasPointerType() || Lout->find(N) != Lout->end()) {
             Value *Ptr = LI->getPointerOperand();
             PointsToNode *PtrNode = factory.getNode(Ptr);
             Lin.insert(PtrNode);
@@ -135,7 +135,7 @@ void LivenessPointsTo::unionRef(LivenessSet& Lin,
         // We only consider the stored value to be ref'd if at least one of the
         // values that can be pointed to by x is live.
         for (auto P = Ain->pointee_begin(PtrNode), E = Ain->pointee_end(PtrNode); P != E; ++P) {
-            if (!(*P)->hasPointerType() || Lout->find(*P) != Lout->end()) {
+            if ((*P)->singlePointee() || !(*P)->hasPointerType() || Lout->find(*P) != Lout->end()) {
                 Lin.insert(factory.getNode(SI->getValueOperand()));
                 break;
             }
@@ -327,7 +327,7 @@ void LivenessPointsTo::computeLout(Instruction *I, LivenessSet* Lout, Intraproce
         // be updated in this case.
         if (insertGlobals) {
             std::function<void(PointsToNode *)> insertReachable = [&](PointsToNode *N) {
-                if (Lout->insert(N)) {
+                if (N->singlePointee() || Lout->insert(N)) {
                     for (auto P = Aout->pointee_begin(N), E = Aout->pointee_end(N); P != E; ++P)
                         insertReachable(*P);
                 }
@@ -422,10 +422,11 @@ LivenessSet *LivenessPointsTo::getReachable(Function *Callee, CallInst *CI, Poin
     // values and global variables, then determine what is reachable using the
     // points-to relation.
     LivenessSet reachable;
-    bool isCallInstLive = Lout->find(factory.getNode(CI)) != Lout->end();
+    PointsToNode *CallNode = factory.getNode(CI);
+    bool isCallInstLive = CallNode->hasPointerType() || Lout->find(CallNode) != Lout->end();
 
     std::function<void(PointsToNode *)> insertReachable = [&](PointsToNode *N) {
-        if (reachable.insert(N)) {
+        if (N->singlePointee() || reachable.insert(N)) {
             for (auto P = Aout->pointee_begin(N), E = Aout->pointee_end(N); P != E; ++P)
                 insertReachable(*P);
 
@@ -437,8 +438,8 @@ LivenessSet *LivenessPointsTo::getReachable(Function *Callee, CallInst *CI, Poin
 
     LivenessSet *L = new LivenessSet();
 
-    // We need to add formal arguments to the result, on only add things that
-    // the actual arguments can point to to reachable, and add formal arguments
+    // We need to add formal arguments to the result. Only add things that the
+    // actual arguments can point to reachable, and add formal arguments to L
     // immediately.
     auto Arg = Callee->arg_begin();
     for (Value *V : CI->arg_operands()) {
@@ -449,7 +450,7 @@ LivenessSet *LivenessPointsTo::getReachable(Function *Callee, CallInst *CI, Poin
         PointsToNode *ANode = factory.getNode(A);
         for (auto P = Aout->pointee_begin(N), E = Aout->pointee_end(N); P != E; ++P)
             insertReachable(*P);
-        if (Lout->find(N) != Lout->end())
+        if (N->singlePointee() || Lout->find(N) != Lout->end())
             L->insert(ANode);
         ++Arg;
     }
@@ -480,7 +481,7 @@ PointsToRelation * LivenessPointsTo::getReachablePT(Function *Callee, CallInst *
     LivenessSet reachable;
 
     std::function<void(PointsToNode *)> insertReachable = [&](PointsToNode *N) {
-        if (reachable.insert(N)) {
+        if (N->singlePointee() || reachable.insert(N)) {
             for (auto P = Ain->pointee_begin(N), E = Ain->pointee_end(N); P != E; ++P)
                 insertReachable(*P);
 
@@ -526,7 +527,7 @@ void LivenessPointsTo::insertReachable(Function *Callee, CallInst *CI, LivenessS
     LivenessSet reachable;
 
     std::function<void(PointsToNode *)> insertReachable = [&](PointsToNode *N) {
-        if (reachable.insert(N)) {
+        if (N->singlePointee() || reachable.insert(N)) {
             for (auto P = Ain->pointee_begin(N), E = Ain->pointee_end(N); P != E; ++P)
                 insertReachable(*P);
 
@@ -573,7 +574,7 @@ void LivenessPointsTo::insertReachableDeclaration(CallInst *CI, LivenessSet &N, 
     LivenessSet reachable;
 
     std::function<void(PointsToNode *)> insertReachable = [&](PointsToNode *N) {
-        if (reachable.insert(N)) {
+        if (N->singlePointee() || reachable.insert(N)) {
             for (auto P = Ain->pointee_begin(N), E = Ain->pointee_end(N); P != E; ++P)
                 insertReachable(*P);
 
@@ -590,11 +591,11 @@ void LivenessPointsTo::insertReachableDeclaration(CallInst *CI, LivenessSet &N, 
     N.insertAll(reachable);
 }
 
-void LivenessPointsTo::insertReachablePT(CallInst *CI, PointsToRelation &N, PointsToRelation &Aout, PointsToRelation *Ain, LivenessSet &ReturnValues) {
+void LivenessPointsTo::insertReachablePT(CallInst *CI, PointsToRelation &N, PointsToRelation &Aout, PointsToRelation *Ain, std::set<PointsToNode *> &ReturnValues) {
     LivenessSet reachable;
 
     std::function<void(PointsToNode *)> insertReachable = [&](PointsToNode *N) {
-        if (reachable.insert(N)) {
+        if (N->singlePointee() || reachable.insert(N)) {
             for (auto P = Ain->pointee_begin(N), E = Ain->pointee_end(N); P != E; ++P)
                  insertReachable(*P);
 
@@ -688,8 +689,8 @@ bool LivenessPointsTo::getCalledFunctionResult(const CallString &CS, Function *F
     return true;
 }
 
-LivenessSet LivenessPointsTo::getReturnValues(const Function *F) {
-    LivenessSet s;
+std::set<PointsToNode *> LivenessPointsTo::getReturnValues(const Function *F) {
+    std::set<PointsToNode *> s;
     for (auto I = inst_begin(F), E = inst_end(F); I != E; ++I)
     {
         const Instruction* Inst = &*I;
@@ -707,7 +708,7 @@ void LivenessPointsTo::runOnFunction(Function *F, const CallString &CS, Intrapro
     // backwards and points-to forwards); this variable contains lout and ain.
     IntraproceduralPointsTo nonresult;
 
-    LivenessSet *Globals = ExitLiveness == nullptr ? new LivenessSet(globals) : nullptr;
+    LivenessSet *EL = ExitLiveness == nullptr ? new LivenessSet() : nullptr;
 
     // Initialize ain, aout, lin and lout for each instruction, and ensure that
     // GEPs are handled correctly.
@@ -720,9 +721,9 @@ void LivenessPointsTo::runOnFunction(Function *F, const CallString &CS, Intrapro
         // is the first in the function, the points-to information before it is
         // executed is exactly that in EntryPointsTo.
         if (isa<ReturnInst>(inst) && I == S)
-            nonresult.insert(std::make_pair(inst, std::make_pair(ExitLiveness == nullptr ? Globals : ExitLiveness, EntryPointsTo)));
+            nonresult.insert(std::make_pair(inst, std::make_pair(ExitLiveness == nullptr ? EL : ExitLiveness, EntryPointsTo)));
         else if (isa<ReturnInst>(inst))
-            nonresult.insert(std::make_pair(inst, std::make_pair(ExitLiveness == nullptr ? Globals : ExitLiveness, new PointsToRelation())));
+            nonresult.insert(std::make_pair(inst, std::make_pair(ExitLiveness == nullptr ? EL : ExitLiveness, new PointsToRelation())));
         else if (I == S)
             nonresult.insert(std::make_pair(inst, std::make_pair(new LivenessSet(), EntryPointsTo)));
         else
@@ -771,7 +772,7 @@ void LivenessPointsTo::runOnFunction(Function *F, const CallString &CS, Intrapro
             bool analysed = false;
             if (Called != nullptr && !Called->isDeclaration()) {
                 // The set of values that are returned from the function.
-                LivenessSet returnValues = getReturnValues(Called);
+                std::set<PointsToNode *> returnValues = getReturnValues(Called);
                 // Add to the list of calls made by the function for analysis later.
                 auto EntryPT = getReachablePT(Called, CI, instruction_ain);
                 auto ExitL = getReachable(Called, CI, instruction_aout, instruction_lout);
