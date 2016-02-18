@@ -39,7 +39,6 @@ protected:
 public:
     PointsToNodeKind getKind() const { return Kind; }
 
-    virtual bool isGlobalAddress() const { return false; }
     virtual bool hasPointerType() const { return false; }
     virtual bool multipleStackFrames() const { return false; }
     virtual bool isAlloca() const { return false; }
@@ -111,7 +110,6 @@ class ValuePointsToNode : public PointsToNode {
 
         ValuePointsToNode(const Value *V) : ValuePointsToNode(V, nullptr) {}
 
-        bool isGlobalAddress() const override { return globalAddress; }
         bool hasPointerType() const override { return isPointer; }
         bool multipleStackFrames() const override { return userOrArg; }
         bool singlePointee() const override { return Pointee != nullptr; }
