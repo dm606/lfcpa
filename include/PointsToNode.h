@@ -93,7 +93,7 @@ class ValuePointsToNode : public PointsToNode {
     private:
         std::string stdName;
         const Value *V;
-        bool isPointer, globalAddress, userOrArg;
+        bool isPointer, userOrArg;
         PointsToNode *Pointee;
     public:
         ValuePointsToNode(const Value *V, PointsToNode *Pointee) : PointsToNode(PTNK_Value), V(V), Pointee(Pointee) {
@@ -103,7 +103,6 @@ class ValuePointsToNode : public PointsToNode {
                 stdName = std::to_string(nextId++);
                 name = StringRef(stdName);
             }
-            globalAddress = isa<GlobalValue>(V);
             isPointer = V->getType()->isPointerTy();
             userOrArg = isa<User>(V) || isa<Argument>(V);
         }
