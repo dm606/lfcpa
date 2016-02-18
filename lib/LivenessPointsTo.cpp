@@ -280,7 +280,7 @@ std::set<PointsToNode *> LivenessPointsTo::getPointee(Instruction *I, PointsToRe
                     // If we treat this GEP field-sensitively, and if the pointer that
                     // it is based on points only to a global, and the first index is 0
                     // (i.e. the field is inside the global), then we use a GEP based on
-                    // the alloca for the pointee.
+                    // the node for the pointee.
                     PointsToNode *Global = factory.getGlobalNode(GV);
                     s.insert(factory.getIndexedNode(Global, GEP));
                     return s;
@@ -816,7 +816,7 @@ void LivenessPointsTo::runOnFunction(Function *F, const CallString &CS, Intrapro
                     // dataflow information finite.
                     LivenessSet survivesCall;
                     for (auto N : *instruction_lout)
-                        if ((N != CINode && ExitL->find(N) == ExitL->end()) || N->isAlloca() || N->multipleStackFrames())
+                        if ((N != CINode && ExitL->find(N) == ExitL->end()) || N->multipleStackFrames())
                             survivesCall.insert(N);
 
                     // Compute lin for the current instruction. A live variable

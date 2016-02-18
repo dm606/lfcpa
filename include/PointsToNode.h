@@ -41,7 +41,6 @@ public:
 
     virtual bool hasPointerType() const { return false; }
     virtual bool multipleStackFrames() const { return false; }
-    virtual bool isAlloca() const { return false; }
     virtual bool singlePointee() const { return false; }
     virtual PointsToNode *getSinglePointee() const {
         llvm_unreachable("This node doesn't always have a single pointee.");
@@ -153,7 +152,6 @@ class AllocaPointsToNode : public PointsToNode {
 
         bool hasPointerType() const override { return isPointer; }
         bool multipleStackFrames() const override { return true; }
-        bool isAlloca() const override { return true; }
 
         static bool classof(const PointsToNode *N) {
             return N->getKind() == PTNK_Alloca;
@@ -193,7 +191,6 @@ class GEPPointsToNode : public PointsToNode {
 
         bool hasPointerType() const override { return pointerType; }
         bool multipleStackFrames() const override { return true; }
-        bool isAlloca() const override { return Parent->isAlloca(); }
         bool singlePointee() const override { return Pointee != nullptr; }
         PointsToNode *getSinglePointee() const override {
             assert(Pointee != nullptr);
