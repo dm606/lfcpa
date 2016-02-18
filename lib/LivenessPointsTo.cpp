@@ -556,9 +556,6 @@ void LivenessPointsTo::insertReachable(Function *Callee, CallInst *CI, LivenessS
     // Then add the global variables.
     for (auto N : Globals)
         insertReachable(N);
-    for (auto N : Lin)
-        if (N->isGlobalAddress())
-            insertReachable(N);
 
     // We now determine which live variables are relevant.
     for (auto Node : Lin)
