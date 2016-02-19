@@ -982,11 +982,9 @@ bool LivenessPointsTo::runOnFunctionAt(const CallString& CS,
 
     if (arePointsToMapsEqual(F, Out, Copy)) {
         // If there is a prefix with the same information, then make it
-        // cyclic. This requires that the information that was just computed
-        // is correct, i.e., the caller does not need it's information computed.
-        // This is true here because it would only run the analysis on it's
-        // callee if it's information hadn't changed. What the callees of the
-        // function do here is guaranteed to be correct (FIXME: Is this true?).
+        // cyclic. If a cyclic call string is created and then the analysis is
+        // rerun with a matching call string, it is removed; this deals with
+        // cases where a cyclic call string is created prematurely.
         if (data.attemptMakeCyclicCallString(F, CS, Out))
             return false;
 

@@ -45,10 +45,17 @@ IntraproceduralPointsTo *PointsToData::getPointsTo(const CallString &CS, Functio
     else
         Pointsto = P->second;
 
-    for (auto P2 : *Pointsto) {
-        assert ((!P2.first.isCyclic() || !P2.first.matches(CS)) && "Information has already been computed");
-        if (CS == P2.first)
-            return P2.second;
+    for (auto I = Pointsto->begin(), E = Pointsto->end(); I != E; ++I) {
+        if (I->first.isCyclic() && I->first.matches(CS)) {
+            // We need to remove the call string completely here because it may
+            // have been made cyclic prematurely. It is possible to break here
+            // because the removal of call strings in
+            // attemptMakeCyclicCallString ensures that others do not match.
+            Pointsto->erase(I);
+            break;
+        }
+        if (CS == I->first)
+            return I->second;
     }
 
     // The call string wasn't found.
