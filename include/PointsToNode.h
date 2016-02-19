@@ -20,7 +20,7 @@ public:
         PTNK_Unknown,
         PTNK_Value,
         PTNK_Global,
-        PTNK_Alloca,
+        PTNK_NoAlias,
         PTNK_GEP
     };
     friend class GEPPointsToNode;
@@ -139,22 +139,30 @@ class GlobalPointsToNode : public PointsToNode {
         }
 };
 
-class AllocaPointsToNode : public PointsToNode {
+class NoAliasPointsToNode : public PointsToNode {
     private:
         std::string stdName;
         bool isPointer;
     public:
-        AllocaPointsToNode(const AllocaInst *AI) : PointsToNode(PTNK_Alloca) {
+        NoAliasPointsToNode(const AllocaInst *AI) : PointsToNode(PTNK_NoAlias) {
            stdName = "alloca:" + AI->getName().str();
            name = StringRef(stdName);
            isPointer = AI->getAllocatedType()->isPointerTy();
+        }
+        NoAliasPointsToNode(const CallInst *CI) : PointsToNode(PTNK_NoAlias) {
+            assert(CI->paramHasAttr(0, Attribute::NoAlias));
+            stdName = "noalias:" + CI->getName().str();
+            name = StringRef(stdName);
+            Type *ReturnType = CI->getFunctionType()->getReturnType();
+            assert(ReturnType->isPointerTy());
+            isPointer = ReturnType->getPointerElementType()->isPointerTy();
         }
 
         bool hasPointerType() const override { return isPointer; }
         bool multipleStackFrames() const override { return true; }
 
         static bool classof(const PointsToNode *N) {
-            return N->getKind() == PTNK_Alloca;
+            return N->getKind() == PTNK_NoAlias;
         }
 };
 

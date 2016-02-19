@@ -83,7 +83,11 @@ PointsToNode* PointsToNodeFactory::getNode(const Value *V) {
             if (const GlobalVariable *G = dyn_cast<GlobalVariable>(V))
                 Pointee = getGlobalNode(G);
             else if (const AllocaInst *AI = dyn_cast<AllocaInst>(V))
-                Pointee = getAllocaNode(AI);
+                Pointee = getNoAliasNode(AI);
+            else if (const CallInst *CI = dyn_cast<CallInst>(V)) {
+                if (CI->paramHasAttr(0, Attribute::NoAlias))
+                    Pointee = getNoAliasNode(CI);
+            }
             Node = new ValuePointsToNode(V, Pointee);
         }
 
@@ -92,13 +96,24 @@ PointsToNode* PointsToNodeFactory::getNode(const Value *V) {
     }
 }
 
-PointsToNode* PointsToNodeFactory::getAllocaNode(const AllocaInst *I) {
-    auto KV = allocaMap.find(I);
-    if (KV != allocaMap.end())
+PointsToNode* PointsToNodeFactory::getNoAliasNode(const AllocaInst *I) {
+    auto KV = noAliasMap.find(I);
+    if (KV != noAliasMap.end())
         return KV->second;
     else {
-        PointsToNode *Node = new AllocaPointsToNode(I);
-        allocaMap.insert(std::make_pair(I, Node));
+        PointsToNode *Node = new NoAliasPointsToNode(I);
+        noAliasMap.insert(std::make_pair(I, Node));
+        return Node;
+    }
+}
+
+PointsToNode* PointsToNodeFactory::getNoAliasNode(const CallInst *I) {
+    auto KV = noAliasMap.find(I);
+    if (KV != noAliasMap.end())
+        return KV->second;
+    else {
+        PointsToNode *Node = new NoAliasPointsToNode(I);
+        noAliasMap.insert(std::make_pair(I, Node));
         return Node;
     }
 }
@@ -116,7 +131,7 @@ PointsToNode* PointsToNodeFactory::getGlobalNode(const GlobalVariable *V) {
 
 PointsToNode *PointsToNodeFactory::getIndexedNode(PointsToNode *A, const GEPOperator *GEP) {
     assert(GEP->hasAllConstantIndices());
-    assert(!A->singlePointee() && "getIndexedNode cannot be used on GlobalVariables or AllocaInsts");
+    assert(!A->singlePointee() && "getIndexedNode cannot be used on nodes with a constant pointee.");
     for (PointsToNode *Child : A->children)
         if (matchGEPNode(GEP, Child))
             return Child;

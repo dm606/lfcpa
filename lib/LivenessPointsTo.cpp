@@ -244,7 +244,7 @@ std::set<PointsToNode *> LivenessPointsTo::getPointee(Instruction *I, PointsToRe
         // If the instruction is an alloca, then we consider the pointer to be
         // to a special location which does not correspond to any Value and is
         // disjoint from all other locations.
-        s.insert(factory.getAllocaNode(AI));
+        s.insert(factory.getNoAliasNode(AI));
     }
     else if (PHINode *Phi = dyn_cast<PHINode>(I)) {
         // The result of the phi can point to anything that an operand of the
@@ -272,7 +272,7 @@ std::set<PointsToNode *> LivenessPointsTo::getPointee(Instruction *I, PointsToRe
                     // it is based on points only to an alloca, and the first index is 0
                     // (i.e. the field is inside the alloca), then we use a GEP based on
                     // the alloca for the pointee.
-                    PointsToNode *Alloca = factory.getAllocaNode(AI);
+                    PointsToNode *Alloca = factory.getNoAliasNode(AI);
                     s.insert(factory.getIndexedNode(Alloca, GEP));
                     return s;
                 }
@@ -825,9 +825,10 @@ void LivenessPointsTo::runOnFunction(Function *F, const CallString &CS, Intrapro
                     // function and live at the beginning of it.
                     LivenessSet n = survivesCall;
                     insertReachable(Called, CI, n, calledFunctionLin, instruction_ain, Globals);
-                    // If the two sets are the same, then no changes need to be made to lin,
-                    // so don't do anything here. Otherwise, we need to update lin and add
-                    // the predecessors of the current instruction to the worklist.
+                    // If the two sets are the same, then no changes need to be
+                    // made to lin, so don't do anything here. Otherwise, we
+                    // need to update lin and add the predecessors of the
+                    // current instruction to the worklist.
                     if (n != *instruction_lin) {
                         instruction_lin->clear();
                         instruction_lin->insertAll(n);
@@ -879,12 +880,13 @@ void LivenessPointsTo::runOnFunction(Function *F, const CallString &CS, Intrapro
                 addCurrToWorklist |= computeAin(I, F, instruction_ain, instruction_lin, Result);
 
                 // Compute aout for the current instruction. Anything that can
-                // be modified by the function (including the return value) must
-                // point to unknown; anything else points to the same thing that
-                // it does in ain.
+                // be modified by the function (including the return value
+                // unless it has the noalias attribute) must point to unknown;
+                // anything else points to the same thing that it does in ain.
                 LivenessSet reachable;
                 insertReachableDeclaration(CI, reachable, instruction_ain);
-                reachable.insert(CINode);
+                if (!CINode->singlePointee())
+                    reachable.insert(CINode);
                 PointsToRelation s;
                 for (PointsToNode *N : reachable)
                     if (instruction_lout->find(N) != instruction_lout->end())
