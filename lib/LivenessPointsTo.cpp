@@ -823,8 +823,12 @@ void LivenessPointsTo::runOnFunction(Function *F, const CallString &CS, Intrapro
                     // here is either used after the call and not accessible
                     // from the called function, or accessible from the called
                     // function and live at the beginning of it.
-                    LivenessSet n = survivesCall;
+                    // Note that insertReachable is applied to an empty set;
+                    // this is because it stops traversing the graph when it
+                    // finds a node that is already in the set.
+                    LivenessSet n;
                     insertReachable(Called, CI, n, calledFunctionLin, instruction_ain, Globals);
+                    n.insertAll(survivesCall);
                     // If the two sets are the same, then no changes need to be
                     // made to lin, so don't do anything here. Otherwise, we
                     // need to update lin and add the predecessors of the
@@ -841,11 +845,15 @@ void LivenessPointsTo::runOnFunction(Function *F, const CallString &CS, Intrapro
                     // should be included are those in ain that couldn't have
                     // been killed by the call, plus those at the end of the
                     // called instruction.
+                    // Note that insertReachablePT is applied to an empty set;
+                    // this is because it stops traversing the graph when it
+                    // finds a node that is already in the set.
                     // FIXME: survivesCall can only be used here if the domain
                     // of Ain is a subset of Lin; is this always the case?
                     PointsToRelation s;
-                    unionRelationRestriction(s, instruction_ain, &survivesCall);
                     insertReachablePT(CI, s, calledFunctionAout, instruction_ain, returnValues, Globals);
+                    unionRelationRestriction(s, instruction_ain, &survivesCall);
+
                     if (s != *instruction_aout) {
                         instruction_aout->clear();
                         instruction_aout->insertAll(s);
@@ -865,8 +873,12 @@ void LivenessPointsTo::runOnFunction(Function *F, const CallString &CS, Intrapro
                 // Compute lin for the current instruction. This consists of
                 // everything that is live after the call, plus anything that
                 // the callee can access, minus the return value.
-                LivenessSet n = *instruction_lout;
+                // Note that insertReachableDeclaration is applied to an empty
+                // set; this is because it stops traversing the graph when it
+                // finds a node that is already in the set.
+                LivenessSet n;
                 insertReachableDeclaration(CI, n, instruction_ain);
+                n.insertAll(*instruction_lout);
                 n.erase(CINode);
                 // If the two sets are the same, then no changes need to be made to lin,
                 // so don't do anything here. Otherwise, we need to update lin and add
