@@ -59,7 +59,7 @@ PointsToNode* PointsToNodeFactory::getNode(const Value *V) {
         if (const GEPOperator *I = dyn_cast<GEPOperator>(V)) {
             if (I->hasAllConstantIndices()) {
                 PointsToNode *Parent = getNode(I->getPointerOperand());
-                if (!Parent->isSummaryNode()) {
+                if (!Parent->pointeesAreSummaryNodes()) {
                     PointsToNode *Pointee = Parent->singlePointee() ? getGEPNode(I, Parent->getSinglePointee(), nullptr) : nullptr;
                     Node = getGEPNode(I, Parent, Pointee);
                 }
@@ -72,10 +72,12 @@ PointsToNode* PointsToNodeFactory::getNode(const Value *V) {
             else {
                 // If I is a GEP which cannot be analysed field-sensitively, then we
                 // return the node correspoinding to the pointer which is being
-                // indexed, but since we cannot perform strong updates, treat it as
-                // a summary node.
+                // indexed, but since we cannot perform strong updates, treat pointees as
+                // summary nodes if they can have pointees themselves.
                 Node = getNode(I->getPointerOperand());
-                Node->markAsSummaryNode();
+                Node->markNotFieldSensitive();
+                if (I->getType()->getPointerElementType()->isPointerTy())
+                    Node->markPointeesAreSummaryNodes();
             }
         }
         else {

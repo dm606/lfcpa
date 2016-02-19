@@ -33,7 +33,7 @@ protected:
     SmallVector<PointsToNode *, 4> children;
     StringRef name;
     static int nextId;
-    bool summaryNode = false;
+    bool summaryNode = false, summaryNodePointees = false, fieldSensitive = true;
 
     PointsToNode(PointsToNodeKind K) : Kind(K) {}
 public:
@@ -45,11 +45,26 @@ public:
     virtual PointsToNode *getSinglePointee() const {
         llvm_unreachable("This node doesn't always have a single pointee.");
     }
+    inline void markPointeesAreSummaryNodes() {
+        summaryNodePointees = true;
+        if (singlePointee())
+            getSinglePointee()->markAsSummaryNode();
+    }
+    inline void markNotFieldSensitive() {
+        fieldSensitive = false;
+    }
     inline void markAsSummaryNode() {
+        assert(!singlePointee());
         summaryNode = true;
     }
     virtual bool isSummaryNode() const {
         return summaryNode;
+    }
+    inline bool pointeesAreSummaryNodes() const {
+        return summaryNodePointees;
+    }
+    inline bool isFieldSensitive() const {
+        return fieldSensitive;
     }
     inline StringRef getName() const {
         return name;

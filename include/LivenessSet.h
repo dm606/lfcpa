@@ -46,7 +46,7 @@ class LivenessSet {
         }
 
         inline bool insert(PointsToNode *N) {
-            if (N->singlePointee() || !N->hasPointerType() || isa<UnknownPointsToNode>(N))
+            if (N->singlePointee() || (!N->hasPointerType() && !N->isSummaryNode()) || isa<UnknownPointsToNode>(N))
                 return false;
 
             return s.insert(N).second;

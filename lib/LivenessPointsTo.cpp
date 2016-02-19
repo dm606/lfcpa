@@ -14,6 +14,8 @@
 #include "PointsToData.h"
 #include "PointsToNode.h"
 
+bool createdSummaryNode = false;
+
 std::set<PointsToNode *> LivenessPointsTo::getPointsToSet(const Value *V, bool &AllowMustAlias) {
     if (const Instruction *I = dyn_cast<Instruction>(V)) {
         PointsToNode *N = factory.getNode(I);
@@ -72,7 +74,6 @@ void LivenessPointsTo::subtractKill(LivenessSet &Lin,
                                     PointsToRelation *Ain) {
     PointsToNode *N = factory.getNode(I);
 
-    // FIXME: Can we ever kill summary nodes?
     // Note that we don't kill GEPs where they are defined; instead, we kill
     // them where the parent is defined, so that their points-to information is
     // preserved for longer.
@@ -107,10 +108,11 @@ void LivenessPointsTo::subtractKill(LivenessSet &Lin,
                 Lin.erase(PointedTo);
             }
         }
-
-        // If there is more than one value that is possibly pointed to by Ptr,
-        // then we need to perform a weak update, so we don't kill anything
-        // else.
+        else {
+            // If there is more than one value that is possibly pointed to by Ptr,
+            // then we need to perform a weak update, so we don't kill anything
+            // else.
+        }
     }
 }
 
@@ -260,9 +262,7 @@ std::set<PointsToNode *> LivenessPointsTo::getPointee(Instruction *I, PointsToRe
     }
     else if (GEPOperator *GEP = dyn_cast<GEPOperator>(I)) {
         PointsToNode *GEPNode = factory.getNode(GEP);
-        // If the node is not a summary node, then we are treating the GEP
-        // field-sensitively.
-        if (!GEPNode->isSummaryNode()) {
+        if (GEPNode->isFieldSensitive()) {
             auto Index = GEP->idx_begin(), E = GEP->idx_end();
             assert(Index != E && "A getelementptr instruction must have at least one index.");
             (void)E;
@@ -305,12 +305,24 @@ std::set<PointsToNode *> LivenessPointsTo::getPointee(Instruction *I, PointsToRe
     return s;
 }
 
+std::pair<PointsToNode *, PointsToNode *> makePointsToPair(PointsToNode *Pointer, PointsToNode *Pointee) {
+    if (Pointer->pointeesAreSummaryNodes() && !Pointee->isSummaryNode()) {
+        // If we turn the pointee into a summary node, this may affect what
+        // stores to the pointee do. However, these will be added to the
+        // worklist again.
+        createdSummaryNode = true;
+        Pointee->markAsSummaryNode();
+    }
+
+    return std::make_pair(Pointer, Pointee);
+}
+
 void unionCartesianProduct(PointsToRelation &Result,
                                          LivenessSet &A,
                                          std::set<PointsToNode *> &B) {
     for (auto &X : A)
         for (auto &Y : B)
-            Result.insert(std::make_pair(X, Y));
+            Result.insert(makePointsToPair(X, Y));
 }
 
 ProcedurePointsTo *LivenessPointsTo::getPointsTo(Function &F) const {
@@ -505,7 +517,7 @@ PointsToRelation * LivenessPointsTo::getReachablePT(Function *Callee, CallInst *
         PointsToNode *ANode = factory.getNode(A);
         for (auto P = Ain->pointee_begin(N), E = Ain->pointee_end(N); P != E; ++P) {
             insertReachable(*P);
-            PT->insert(std::make_pair(ANode, *P));
+            PT->insert(makePointsToPair(ANode, *P));
         }
         ++Arg;
     }
@@ -628,14 +640,14 @@ void LivenessPointsTo::insertReachablePT(CallInst *CI, PointsToRelation &N, Poin
         N.insert(std::make_pair(factory.getNode(CI), factory.getUnknown()));
     else
         for (auto P = Aout.restriction_begin(ReturnValues), E = Aout.restriction_end(ReturnValues); P != E; ++P)
-            N.insert(std::make_pair(factory.getNode(CI), P->second));
+            N.insert(makePointsToPair(factory.getNode(CI), P->second));
 
     // The function can change it's formal arguments, but not it's actual
     // arguments, since they are passed by value.
     for (Value *V : CI->arg_operands()) {
         PointsToNode *Node = factory.getNode(V);
         for (auto P = Ain->pointee_begin(Node), E = Ain->pointee_end(Node); P != E; ++P) {
-            N.insert(std::make_pair(Node, *P));
+            N.insert(makePointsToPair(Node, *P));
             insertReachable(*P);
         }
     }
@@ -979,6 +991,15 @@ void LivenessPointsTo::runOnFunction(Function *F, const CallString &CS, Intrapro
             }
             else
                 worklist.push_back(getPreviousInstruction(I));
+        }
+
+        if (worklist.empty() && createdSummaryNode) {
+            createdSummaryNode = false;
+            // We need to rerun on stores because they might need to treat a
+            // summary node differently.
+            for (inst_iterator I = inst_begin(F), E = inst_end(F); I != E; I++)
+                if (isa<StoreInst>(*I))
+                    worklist.push_back(&*I);
         }
     }
 }
