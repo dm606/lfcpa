@@ -267,29 +267,39 @@ std::set<PointsToNode *> LivenessPointsTo::getPointee(Instruction *I, PointsToRe
             assert(Index != E && "A getelementptr instruction must have at least one index.");
             (void)E;
             if (cast<ConstantInt>(Index)->isZero()) {
-                if (AllocaInst *AI = dyn_cast<AllocaInst>(GEP->getPointerOperand())) {
-                    // If we treat this GEP field-sensitively, and if the pointer that
-                    // it is based on points only to an alloca, and the first index is 0
-                    // (i.e. the field is inside the alloca), then we use a GEP based on
-                    // the alloca for the pointee.
-                    PointsToNode *Alloca = factory.getNoAliasNode(AI);
-                    s.insert(factory.getIndexedNode(Alloca, GEP));
+                PointsToNode *PointerOperandNode = factory.getNode(GEP->getPointerOperand());
+                if (PointerOperandNode->singlePointee()) {
+                    // If we treat this GEP field-sensitively, and if the
+                    // pointer that it is based on points only to a constant
+                    // node, and the first index is 0 (i.e. the field is inside
+                    // the node), then we use a GEP based on the node for the
+                    // pointee.
+                    s.insert(factory.getIndexedNode(PointerOperandNode->getSinglePointee(), GEP));
                     return s;
                 }
-                else if (GlobalVariable *GV = dyn_cast<GlobalVariable>(GEP->getPointerOperand())) {
-                    // If we treat this GEP field-sensitively, and if the pointer that
-                    // it is based on points only to a global, and the first index is 0
-                    // (i.e. the field is inside the global), then we use a GEP based on
-                    // the node for the pointee.
-                    PointsToNode *Global = factory.getGlobalNode(GV);
-                    s.insert(factory.getIndexedNode(Global, GEP));
-                    return s;
+
+                PointsToNode *Pointee = nullptr;
+                for (auto I = Ain->pointee_begin(PointerOperandNode), E = Ain->pointee_end(PointerOperandNode); I != E; ++I) {
+                    if (isa<UnknownPointsToNode>(*I)) {
+                        // If we treat this GEP field-sensitively, and if we don't
+                        // know what the pointer that the GEP is based on points to,
+                        // then we don't know what the result of the GEP points to.
+                        s.insert(factory.getUnknown());
+                        return s;
+                    }
+                    else if (Pointee == nullptr)
+                        Pointee = *I;
+                    else
+                        break;
                 }
-                else if (pointsToUnknown(factory.getNode(GEP), Ain)) {
-                    // If we treat this GEP field-sensitively, and if we don't
-                    // know what the pointer that the GEP is based on points to,
-                    // then we don't know what the result of the GEP points to.
-                    s.insert(factory.getUnknown());
+
+                if (Pointee != nullptr) {
+                    // If we treat this GEP field-sensitively, and if the
+                    // pointer that it is based on points only to Pointee node,
+                    // and the first index is 0 (i.e. the field is inside
+                    // Pointee), then we use a GEP based on Pointee for the
+                    // pointee.
+                    s.insert(factory.getIndexedNode(Pointee, GEP));
                     return s;
                 }
             }
@@ -1067,11 +1077,15 @@ void LivenessPointsTo::runOnModule(Module &M) {
         }
     };
 
-    // Determine which global variables each function uses.
+    // Determine which global variables each function uses, and ensure that
+    // nodes are created for its instructions. The latter is required for GEP
+    // instructions to ensure that they are correctly registered as children of
+    // other nodes.
     for (Function &F : M) {
         if (!F.isDeclaration()) {
             GlobalVector Vector;
             for (auto I = inst_begin(F), E = inst_end(F); I != E; ++I) {
+                factory.getNode(&*I);
                 User *U = &*I;
                 insertOperands(U, Vector);
             }
