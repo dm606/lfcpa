@@ -585,15 +585,14 @@ void LivenessPointsTo::insertReachable(Function *Callee, CallInst *CI, LivenessS
             N.insert(Node);
 }
 
-void LivenessPointsTo::insertReachableDeclaration(CallInst *CI, LivenessSet &N, PointsToRelation *Ain) {
+void LivenessPointsTo::insertReachableDeclaration(CallInst *CI, LivenessSet &Reachable, PointsToRelation *Ain) {
+    assert(Reachable.empty());
     // FIXME: Can globals be accessed by the function?
     // This is roughly the mark phase from mark-and-sweep garbage collection. We
     // begin with the roots, which are the arguments of the function,  then
     // determine what is reachable using the points-to relation.
-    LivenessSet reachable;
-
     std::function<void(PointsToNode *)> insertReachable = [&](PointsToNode *N) {
-        if (N->singlePointee() || reachable.insert(N)) {
+        if (N->singlePointee() || Reachable.insert(N)) {
             for (auto P = Ain->pointee_begin(N), E = Ain->pointee_end(N); P != E; ++P)
                 insertReachable(*P);
 
@@ -606,8 +605,6 @@ void LivenessPointsTo::insertReachableDeclaration(CallInst *CI, LivenessSet &N, 
     // Arguments are roots.
     for (Value *V : CI->arg_operands())
         insertReachable(factory.getNode(V));
-
-    N.insertAll(reachable);
 }
 
 void LivenessPointsTo::insertReachablePT(CallInst *CI, PointsToRelation &N, PointsToRelation &Aout, PointsToRelation *Ain, std::set<PointsToNode *> &ReturnValues, GlobalVector &Globals) {
