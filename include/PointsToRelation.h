@@ -8,9 +8,8 @@
 
 class PointsToRelation {
 public:
-    typedef std::set<std::pair<PointsToNode *, PointsToNode *>>::iterator iterator;
-    typedef std::set<std::pair<PointsToNode *, PointsToNode *>>::const_iterator const_iterator;
-    typedef std::set<std::pair<PointsToNode *, PointsToNode *>>::size_type size_type;
+    typedef std::set<std::pair<PointsToNode *, PointsToNode *>> container;
+    typedef container::const_iterator const_iterator;
 
     class const_pointee_iterator {
     public:
@@ -163,6 +162,50 @@ public:
         return s.insert(N).second;
     }
 
+    inline void unionRelationRestriction(PointsToRelation *R, LivenessSet *S) {
+        auto RI = R->s.begin(), RE = R->s.end();
+        auto SI = S->begin(), SE = S->end();
+        auto I = s.begin(), E = s.end();
+        std::less<PointsToNode *> ln;
+        std::less<std::pair<PointsToNode *, PointsToNode *>> l;
+
+        while (RI != RE && SI != SE) {
+            // Find the first element of R that needs inserting.
+            while (*SI != RI->first) {
+                while (SI != SE && ln(*SI, RI->first)) ++SI;
+                if (SI == SE) return;
+                while (RI != RE && ln(RI->first, *SI)) ++RI;
+                if (RI == RE) return;
+            }
+            // At this point, *SI == RI->first, and neither iterator has reached
+            // the end.
+
+            if (I != E && isa<UnknownPointsToNode>(I->second)) {
+                // If I->first points to unknown, then don't bother inserting any
+                // pairs with the same first element.
+                while (RI != RE && I->first == RI->first) ++RI;
+                ++I;
+                continue;
+            }
+
+            if (isa<UnknownPointsToNode>(RI->second)) {
+                // RI->first is going to point to unknown, so remove all pairs
+                // with the same first element and then insert *RI.
+                while (I != E && I->first == RI->first)
+                    I = s.erase(I);
+                s.emplace_hint(I, *RI);
+                ++RI;
+                continue;
+            }
+
+            // Find the position to insert the next value at.
+            while (I != E && l(*I, *RI)) ++I;
+
+            s.emplace_hint(I, *RI);
+            ++RI;
+        }
+    }
+
     inline bool operator==(const PointsToRelation &R) const {
         return s==R.s;
     }
@@ -211,7 +254,7 @@ public:
 
     void dump() const;
 private:
-    std::set<std::pair<PointsToNode *, PointsToNode *>> s;
+    container s;
 };
 
 #endif

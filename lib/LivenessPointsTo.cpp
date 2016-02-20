@@ -164,13 +164,6 @@ void LivenessPointsTo::unionRef(LivenessSet& Lin,
     }
 }
 
-void LivenessPointsTo::unionRelationRestriction(PointsToRelation &Result,
-                                                PointsToRelation *Aout,
-                                                LivenessSet *Lin) {
-    for (auto P = Aout->restriction_begin(Lin), E = Aout->restriction_end(Lin); P != E; ++P)
-        Result.insert(*P);
-}
-
 LivenessSet LivenessPointsTo::getRestrictedDef(Instruction *I,
                                                PointsToRelation *Ain,
                                                LivenessSet *Lout) {
@@ -427,7 +420,7 @@ bool LivenessPointsTo::computeAin(Instruction *I, Function *F, PointsToRelation 
                 auto pred_result = Result->find(Pred);
                 assert(pred_result != Result->end());
                 PointsToRelation *PredAout = pred_result->second.second;
-                unionRelationRestriction(s, PredAout, Lin);
+                s.unionRelationRestriction(PredAout, Lin);
             }
         }
         else {
@@ -435,7 +428,7 @@ bool LivenessPointsTo::computeAin(Instruction *I, Function *F, PointsToRelation 
             auto pred_result = Result->find(Pred);
             assert(pred_result != Result->end());
             PointsToRelation *PredAout = pred_result->second.second;
-            unionRelationRestriction(s, PredAout, Lin);
+            s.unionRelationRestriction(PredAout, Lin);
         }
     }
     if (s != *Ain) {
@@ -877,7 +870,7 @@ void LivenessPointsTo::runOnFunction(Function *F, const CallString &CS, Intrapro
                     // of Ain is a subset of Lin; is this always the case?
                     PointsToRelation s;
                     insertReachablePT(CI, s, calledFunctionAout, instruction_ain, returnValues, Globals);
-                    unionRelationRestriction(s, instruction_ain, &survivesCall);
+                    s.unionRelationRestriction(instruction_ain, &survivesCall);
 
                     if (s != *instruction_aout) {
                         instruction_aout->clear();
@@ -956,7 +949,7 @@ void LivenessPointsTo::runOnFunction(Function *F, const CallString &CS, Intrapro
             // Compute aout for the current instruction.
             LivenessSet notKilled = *instruction_lout;
             subtractKill(notKilled, I, instruction_ain);
-            unionRelationRestriction(s, instruction_ain, &notKilled);
+            s.unionRelationRestriction(instruction_ain, &notKilled);
             LivenessSet def =
                 getRestrictedDef(I, instruction_ain, instruction_lout);
             // There is no need to call getPointee if def is empty because the

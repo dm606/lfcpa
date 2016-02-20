@@ -24,7 +24,6 @@ private:
     std::set<PointsToNode *> getPointee(Instruction *, PointsToRelation *);
     void subtractKill(LivenessSet &, Instruction *, PointsToRelation *);
     void unionRef(LivenessSet &, Instruction *, LivenessSet *, PointsToRelation *);
-    void unionRelationRestriction(PointsToRelation &, PointsToRelation *, LivenessSet *);
     void computeLout(Instruction *, LivenessSet * , IntraproceduralPointsTo *, PointsToRelation *, bool, const GlobalVector &);
     bool computeAin(Instruction *, Function *, PointsToRelation *, LivenessSet *, IntraproceduralPointsTo *);
     LivenessSet *getReachable(Function *, CallInst *, PointsToRelation *, LivenessSet *, GlobalVector &);
