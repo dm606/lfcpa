@@ -351,15 +351,17 @@ void LivenessPointsTo::computeLout(Instruction *I, LivenessSet* Lout, Intraproce
         // value, and any anything which is reachable from them; these need to
         // be updated in this case.
         if (insertGlobals) {
+            std::set<PointsToNode *> seen;
             std::function<void(PointsToNode *)> insertReachable = [&](PointsToNode *N) {
-                if (N->singlePointee() || Lout->insert(N)) {
+                if (seen.insert(N).second) {
+                    Lout->insert(N);
                     for (auto P = Aout->pointee_begin(N), E = Aout->pointee_end(N); P != E; ++P)
                         insertReachable(*P);
-                }
 
-                // If a node is reachable, then so are its subnodes.
-                for (auto *Child : N->children)
-                    insertReachable(Child);
+                    // If a node is reachable, then so are its subnodes.
+                    for (auto *Child : N->children)
+                        insertReachable(Child);
+                }
             };
 
             Lout->clear();
@@ -451,11 +453,13 @@ LivenessSet *LivenessPointsTo::getReachable(Function *Callee, CallInst *CI, Poin
     // values and global variables, then determine what is reachable using the
     // points-to relation.
     LivenessSet reachable;
+    std::set<PointsToNode *> seen;
     PointsToNode *CallNode = factory.getNode(CI);
     bool isCallInstLive = !CallNode->hasPointerType() || Lout->find(CallNode) != Lout->end();
 
     std::function<void(PointsToNode *)> insertReachable = [&](PointsToNode *N) {
-        if (N->singlePointee() || reachable.insert(N)) {
+        if (seen.insert(N).second) {
+            reachable.insert(N);
             for (auto P = Aout->pointee_begin(N), E = Aout->pointee_end(N); P != E; ++P)
                 insertReachable(*P);
 
@@ -464,7 +468,6 @@ LivenessSet *LivenessPointsTo::getReachable(Function *Callee, CallInst *CI, Poin
                 insertReachable(Child);
         }
     };
-
     LivenessSet *L = new LivenessSet();
 
     // We need to add formal arguments to the result. Only add things that the
@@ -505,9 +508,11 @@ PointsToRelation * LivenessPointsTo::getReachablePT(Function *Callee, CallInst *
     // begin with the roots, which are the arguments of the function and global
     // variables, then determine what is reachable using the points-to relation.
     LivenessSet reachable;
+    std::set<PointsToNode *> seen;
 
     std::function<void(PointsToNode *)> insertReachable = [&](PointsToNode *N) {
-        if (N->singlePointee() || reachable.insert(N)) {
+        if (seen.insert(N).second) {
+            reachable.insert(N);
             for (auto P = Ain->pointee_begin(N), E = Ain->pointee_end(N); P != E; ++P)
                 insertReachable(*P);
 
@@ -551,9 +556,11 @@ void LivenessPointsTo::insertReachable(Function *Callee, CallInst *CI, LivenessS
     // begin with the roots, which are the arguments of the function and global
     // variables, then determine what is reachable using the points-to relation.
     LivenessSet reachable;
+    std::set<PointsToNode *> seen;
 
     std::function<void(PointsToNode *)> insertReachable = [&](PointsToNode *N) {
-        if (N->singlePointee() || reachable.insert(N)) {
+        if (seen.insert(N).second) {
+            reachable.insert(N);
             for (auto P = Ain->pointee_begin(N), E = Ain->pointee_end(N); P != E; ++P)
                 insertReachable(*P);
 
@@ -563,8 +570,8 @@ void LivenessPointsTo::insertReachable(Function *Callee, CallInst *CI, LivenessS
         }
     };
 
-    // If there is a formal attribute that is live at the beginning of the
-    // callee, the corresponding actual arguments is live before the call
+    // If there is a formal argument that is live at the beginning of the
+    // callee, the corresponding actual argument is live before the call
     // instruction.
     auto Arg = Callee->arg_begin();
     for (Value *V : CI->arg_operands()) {
@@ -590,13 +597,14 @@ void LivenessPointsTo::insertReachable(Function *Callee, CallInst *CI, LivenessS
 }
 
 void LivenessPointsTo::insertReachableDeclaration(CallInst *CI, LivenessSet &Reachable, PointsToRelation *Ain) {
-    assert(Reachable.empty());
+    std::set<PointsToNode *> seen;
     // FIXME: Can globals be accessed by the function?
     // This is roughly the mark phase from mark-and-sweep garbage collection. We
     // begin with the roots, which are the arguments of the function,  then
     // determine what is reachable using the points-to relation.
     std::function<void(PointsToNode *)> insertReachable = [&](PointsToNode *N) {
-        if (N->singlePointee() || Reachable.insert(N)) {
+        if (seen.insert(N).second) {
+            Reachable.insert(N);
             for (auto P = Ain->pointee_begin(N), E = Ain->pointee_end(N); P != E; ++P)
                 insertReachable(*P);
 
@@ -613,18 +621,19 @@ void LivenessPointsTo::insertReachableDeclaration(CallInst *CI, LivenessSet &Rea
 
 void LivenessPointsTo::insertReachablePT(CallInst *CI, PointsToRelation &N, PointsToRelation &Aout, PointsToRelation *Ain, std::set<PointsToNode *> &ReturnValues, GlobalVector &Globals) {
     LivenessSet reachable;
+    std::set<PointsToNode *> seen;
 
     std::function<void(PointsToNode *)> insertReachable = [&](PointsToNode *N) {
-        if (N->singlePointee() || reachable.insert(N)) {
+        if (seen.insert(N).second) {
+            reachable.insert(N);
             for (auto P = Ain->pointee_begin(N), E = Ain->pointee_end(N); P != E; ++P)
-                 insertReachable(*P);
+                insertReachable(*P);
 
             // If a node is reachable, then so are its subnodes.
             for (auto *Child : N->children)
                 insertReachable(Child);
         }
     };
-
     // We want the result of the call to point to anything that a return value
     // can point to. However, if there is a return value that we don't know what
     // points to, then we don't know anything about what the result can point
@@ -846,12 +855,8 @@ void LivenessPointsTo::runOnFunction(Function *F, const CallString &CS, Intrapro
                     // here is either used after the call and not accessible
                     // from the called function, or accessible from the called
                     // function and live at the beginning of it.
-                    // Note that insertReachable is applied to an empty set;
-                    // this is because it stops traversing the graph when it
-                    // finds a node that is already in the set.
-                    LivenessSet n;
+                    LivenessSet n = survivesCall;
                     insertReachable(Called, CI, n, calledFunctionLin, instruction_ain, Globals);
-                    n.insertAll(survivesCall);
                     // If the two sets are the same, then no changes need to be
                     // made to lin, so don't do anything here. Otherwise, we
                     // need to update lin and add the predecessors of the
@@ -868,9 +873,6 @@ void LivenessPointsTo::runOnFunction(Function *F, const CallString &CS, Intrapro
                     // should be included are those in ain that couldn't have
                     // been killed by the call, plus those at the end of the
                     // called instruction.
-                    // Note that insertReachablePT is applied to an empty set;
-                    // this is because it stops traversing the graph when it
-                    // finds a node that is already in the set.
                     // FIXME: survivesCall can only be used here if the domain
                     // of Ain is a subset of Lin; is this always the case?
                     PointsToRelation s;
@@ -896,12 +898,8 @@ void LivenessPointsTo::runOnFunction(Function *F, const CallString &CS, Intrapro
                 // Compute lin for the current instruction. This consists of
                 // everything that is live after the call, plus anything that
                 // the callee can access, minus the return value.
-                // Note that insertReachableDeclaration is applied to an empty
-                // set; this is because it stops traversing the graph when it
-                // finds a node that is already in the set.
-                LivenessSet n;
+                LivenessSet n = *instruction_lout;
                 insertReachableDeclaration(CI, n, instruction_ain);
-                n.insertAll(*instruction_lout);
                 n.erase(CINode);
                 // If the two sets are the same, then no changes need to be made to lin,
                 // so don't do anything here. Otherwise, we need to update lin and add
