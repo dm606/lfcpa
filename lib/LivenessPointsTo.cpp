@@ -356,6 +356,10 @@ void LivenessPointsTo::computeLout(Instruction *I, LivenessSet* Lout, Intraproce
                     for (auto P = Aout->pointee_begin(N), E = Aout->pointee_end(N); P != E; ++P)
                         insertReachable(*P);
                 }
+
+                // If a node is reachable, then so are its subnodes.
+                for (auto *Child : N->children)
+                    insertReachable(Child);
             };
 
             Lout->clear();
