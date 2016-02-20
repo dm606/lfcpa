@@ -771,13 +771,15 @@ void LivenessPointsTo::runOnFunction(Function *F, const CallString &CS, Intrapro
     }
 
     // Create and initialize worklist.
-    SmallVector<Instruction *, 128> worklist;
+    SmallPtrSet<Instruction *, 128> worklist;
     for (inst_iterator I = inst_begin(F), E = inst_end(F); I != E; I++)
-        worklist.push_back(&*I);
+        worklist.insert(&*I);
 
     // Update points-to and liveness information until it converges.
     while (!worklist.empty()) {
-        Instruction *I = worklist.pop_back_val();
+        auto II = worklist.begin();
+        Instruction *I = *II;
+        worklist.erase(I);
 
         auto instruction_nonresult = nonresult.find(I), instruction_result = Result->find(I);
         assert (instruction_nonresult != nonresult.end());
@@ -969,15 +971,15 @@ void LivenessPointsTo::runOnFunction(Function *F, const CallString &CS, Intrapro
         if (addSuccsToWorklist) {
             if (TerminatorInst *TI = dyn_cast<TerminatorInst>(I)) {
                 for (unsigned i = 0; i < TI->getNumSuccessors(); i++)
-                    worklist.push_back(TI->getSuccessor(i)->begin());
+                    worklist.insert(TI->getSuccessor(i)->begin());
             }
             else
-                worklist.push_back(getNextInstruction(I));
+                worklist.insert(getNextInstruction(I));
         }
 
         // Add current instruction to worklist
         if (addCurrToWorklist)
-            worklist.push_back(I);
+            worklist.insert(I);
 
         // Add preds to worklist
         if (addPredsToWorklist) {
@@ -988,11 +990,11 @@ void LivenessPointsTo::runOnFunction(Function *F, const CallString &CS, Intrapro
                      PI != E;
                      ++PI) {
                     BasicBlock *Pred = *PI;
-                    worklist.push_back(--(Pred->end()));
+                    worklist.insert(--(Pred->end()));
                 }
             }
             else
-                worklist.push_back(getPreviousInstruction(I));
+                worklist.insert(getPreviousInstruction(I));
         }
 
         if (worklist.empty() && createdSummaryNode) {
@@ -1001,7 +1003,7 @@ void LivenessPointsTo::runOnFunction(Function *F, const CallString &CS, Intrapro
             // summary node differently.
             for (inst_iterator I = inst_begin(F), E = inst_end(F); I != E; I++)
                 if (isa<StoreInst>(*I))
-                    worklist.push_back(&*I);
+                    worklist.insert(&*I);
         }
     }
 }
