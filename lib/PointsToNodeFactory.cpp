@@ -30,7 +30,7 @@ bool PointsToNodeFactory::matchGEPNode(const GEPOperator *I, const PointsToNode 
     return false;
 }
 
-PointsToNode *PointsToNodeFactory::getGEPNode(const GEPOperator *I, PointsToNode *Parent, PointsToNode *Pointee) const {
+PointsToNode *PointsToNodeFactory::getGEPNode(const GEPOperator *I, const Type *Type, PointsToNode *Parent, PointsToNode *Pointee) const {
     // We use a special representation of GEPs which can be analysed to
     // implement field-sensitivity. Multiple values can map to the same GEP node
     // (when the GEP has the same pointer operand and indices).  Note that
@@ -42,7 +42,7 @@ PointsToNode *PointsToNodeFactory::getGEPNode(const GEPOperator *I, PointsToNode
         }
     }
 
-    return new GEPPointsToNode(Parent, I, Pointee);
+    return new GEPPointsToNode(Parent, Type, I, Pointee);
 }
 
 PointsToNode* PointsToNodeFactory::getNode(const Value *V) {
@@ -60,8 +60,10 @@ PointsToNode* PointsToNodeFactory::getNode(const Value *V) {
             if (I->hasAllConstantIndices()) {
                 PointsToNode *Parent = getNode(I->getPointerOperand());
                 if (!Parent->pointeesAreSummaryNodes()) {
-                    PointsToNode *Pointee = Parent->singlePointee() ? getGEPNode(I, Parent->getSinglePointee(), nullptr) : nullptr;
-                    Node = getGEPNode(I, Parent, Pointee);
+                    Type *GEPType = I->getType();
+                    Type *PointeeType = GEPType->getPointerElementType();
+                    PointsToNode *Pointee = Parent->singlePointee() ? getGEPNode(I, PointeeType, Parent->getSinglePointee(), nullptr) : nullptr;
+                    Node = getGEPNode(I, GEPType, Parent, Pointee);
                 }
                 else {
                     // Since the parent is a summary node, we use the parent to
@@ -127,6 +129,17 @@ PointsToNode* PointsToNodeFactory::getGlobalNode(const GlobalVariable *V) {
     else {
         PointsToNode *Node = new GlobalPointsToNode(V);
         globalMap.insert(std::make_pair(V, Node));
+        return Node;
+    }
+}
+
+PointsToNode* PointsToNodeFactory::getDummyNode(const CallInst *CI) {
+    auto KV = dummyMap.find(CI);
+    if (KV != dummyMap.end())
+        return KV->second;
+    else {
+        PointsToNode *Node = new DummyPointsToNode(CI);
+        dummyMap.insert(std::make_pair(CI, Node));
         return Node;
     }
 }

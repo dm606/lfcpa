@@ -252,6 +252,10 @@ public:
         return const_restriction_iterator(s.end(), s.end(), S->begin(), S->end());
     }
 
+    bool empty() const {
+        return s.empty();
+    }
+
     void dump() const;
 private:
     container s;

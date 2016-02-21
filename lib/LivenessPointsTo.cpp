@@ -488,7 +488,6 @@ LivenessSet *LivenessPointsTo::getReachable(Function *Callee, CallInst *CI, Poin
     // Then add the global variables
     for (auto N : Globals)
         insertReachable(N);
-
     for (auto N : *Lout)
         if (reachable.find(N) != reachable.end())
             L->insert(N);
@@ -496,7 +495,7 @@ LivenessSet *LivenessPointsTo::getReachable(Function *Callee, CallInst *CI, Poin
     return L;
 }
 
-PointsToRelation * LivenessPointsTo::getReachablePT(Function *Callee, CallInst *CI, PointsToRelation *Ain, GlobalVector &Globals) {
+PointsToRelation * LivenessPointsTo::getReachablePT(Function *Callee, CallInst *CI, PointsToRelation *Ain, GlobalVector &Globals, bool &EverythingReachable) {
     // This is roughly the mark phase from mark-and-sweep garbage collection. We
     // begin with the roots, which are the arguments of the function and global
     // variables, then determine what is reachable using the points-to relation.
@@ -504,6 +503,11 @@ PointsToRelation * LivenessPointsTo::getReachablePT(Function *Callee, CallInst *
     std::set<PointsToNode *> seen;
 
     std::function<void(PointsToNode *)> insertReachable = [&](PointsToNode *N) {
+        if (isa<UnknownPointsToNode>(N)) {
+            // If ? is reachable, then everything is reachable.
+            EverythingReachable = true;
+            return;
+        }
         if (seen.insert(N).second) {
             reachable.insert(N);
             for (auto P = Ain->pointee_begin(N), E = Ain->pointee_end(N); P != E; ++P)
@@ -537,7 +541,6 @@ PointsToRelation * LivenessPointsTo::getReachablePT(Function *Callee, CallInst *
     // Then add the global variables.
     for (auto N : Globals)
         insertReachable(N);
-
     for (auto P = Ain->restriction_begin(reachable), E = Ain->restriction_end(reachable); P != E; ++P)
         PT->insert(*P);
 
@@ -589,7 +592,7 @@ void LivenessPointsTo::insertReachable(Function *Callee, CallInst *CI, LivenessS
             N.insert(Node);
 }
 
-void LivenessPointsTo::insertReachableDeclaration(CallInst *CI, LivenessSet &Reachable, PointsToRelation *Ain) {
+void LivenessPointsTo::insertReachableDeclaration(CallInst *CI, LivenessSet &Reachable, PointsToRelation *Ain, bool &EverythingReachable) {
     std::set<PointsToNode *> seen;
     // FIXME: Can globals be accessed by the function?
     // This is roughly the mark phase from mark-and-sweep garbage collection. We
@@ -598,8 +601,13 @@ void LivenessPointsTo::insertReachableDeclaration(CallInst *CI, LivenessSet &Rea
     std::function<void(PointsToNode *)> insertReachable = [&](PointsToNode *N) {
         if (seen.insert(N).second) {
             Reachable.insert(N);
-            for (auto P = Ain->pointee_begin(N), E = Ain->pointee_end(N); P != E; ++P)
+            for (auto P = Ain->pointee_begin(N), E = Ain->pointee_end(N); P != E; ++P) {
+                if (isa<UnknownPointsToNode>(*P)) {
+                    EverythingReachable = true;
+                    return;
+                }
                 insertReachable(*P);
+            }
 
             // If a node is reachable, then so are its subnodes.
             for (auto *Child : N->children)
@@ -621,6 +629,7 @@ void LivenessPointsTo::insertReachablePT(CallInst *CI, PointsToRelation &N, Poin
             reachable.insert(N);
             for (auto P = Ain->pointee_begin(N), E = Ain->pointee_end(N); P != E; ++P)
                 insertReachable(*P);
+
 
             // If a node is reachable, then so are its subnodes.
             for (auto *Child : N->children)
@@ -802,6 +811,7 @@ void LivenessPointsTo::runOnFunction(Function *F, const CallString &CS, Intrapro
 
             bool analysed = false;
             if (Called != nullptr && !Called->isDeclaration()) {
+                PointsToNode *dummy = factory.getDummyNode(CI);
                 // The set of values that are returned from the function.
                 std::set<PointsToNode *> returnValues = getReturnValues(Called);
                 auto G = GlobalsMap.find(Called);
@@ -809,8 +819,12 @@ void LivenessPointsTo::runOnFunction(Function *F, const CallString &CS, Intrapro
                 // The globals that the called function can access.
                 GlobalVector &CalledGlobals = G->second;
                 // Add to the list of calls made by the function for analysis later.
-                auto EntryPT = getReachablePT(Called, CI, instruction_ain, CalledGlobals);
+                bool EverythingReachable = false;
+                auto EntryPT = getReachablePT(Called, CI, instruction_ain, CalledGlobals, EverythingReachable);
                 auto ExitL = getReachable(Called, CI, instruction_aout, instruction_lout, CalledGlobals);
+                if (EverythingReachable)
+                    ExitL->insert(dummy);
+
                 bool found = false;
                 for (auto I = Calls.begin(), E = Calls.end(); I != E; ++I) {
                     CallInst *TupleCI;
@@ -841,10 +855,27 @@ void LivenessPointsTo::runOnFunction(Function *F, const CallString &CS, Intrapro
                     // the "same" local, and killing one should not kill
                     // another. This in imprecise, but it keeps the lattice of
                     // dataflow information finite.
+                    // If the node ? is reachable from the function, then
+                    // everything in Lout is reachable from the function. In
+                    // this case, ExitL contains a dummy node which all of these
+                    // nodes so that it can be determined if they are killed
+                    // inside the function.  Points-to pairs for these nodes do
+                    // not need to be tracked because they are not usable when
+                    // analysing the function; since the computed value of Ain
+                    // is restricted to nodes that are not killed, when a node
+                    // is killed any pairs with it as the first component will
+                    // be removed.
                     LivenessSet survivesCall;
-                    for (auto N : *instruction_lout)
-                        if ((N != CINode && ExitL->find(N) == ExitL->end()) || N->multipleStackFrames())
-                            survivesCall.insert(N);
+                    if (EverythingReachable && calledFunctionLin.find(dummy) == calledFunctionLin.end()) {
+                        // If dummy is killed, then the function kills
+                        // everything; in this case, *nothing* survives the
+                        // call.
+                    }
+                    else {
+                        for (auto N : *instruction_lout)
+                            if ((N != CINode && ExitL->find(N) == ExitL->end()) || N->multipleStackFrames())
+                                survivesCall.insert(N);
+                    }
 
                     // Compute lin for the current instruction. A live variable
                     // here is either used after the call and not accessible
@@ -894,7 +925,8 @@ void LivenessPointsTo::runOnFunction(Function *F, const CallString &CS, Intrapro
                 // everything that is live after the call, plus anything that
                 // the callee can access, minus the return value.
                 LivenessSet n = *instruction_lout;
-                insertReachableDeclaration(CI, n, instruction_ain);
+                bool EverythingReachable = false;
+                insertReachableDeclaration(CI, n, instruction_ain, EverythingReachable);
                 n.erase(CINode);
                 // If the two sets are the same, then no changes need to be made to lin,
                 // so don't do anything here. Otherwise, we need to update lin and add
@@ -912,16 +944,21 @@ void LivenessPointsTo::runOnFunction(Function *F, const CallString &CS, Intrapro
                 // unless it has the noalias attribute) must point to unknown;
                 // anything else points to the same thing that it does in ain.
                 LivenessSet reachable;
-                insertReachableDeclaration(CI, reachable, instruction_ain);
+                insertReachableDeclaration(CI, reachable, instruction_ain, EverythingReachable);
                 if (!CINode->singlePointee())
                     reachable.insert(CINode);
                 PointsToRelation s;
-                for (PointsToNode *N : reachable)
-                    if (instruction_lout->find(N) != instruction_lout->end())
+                if (EverythingReachable)
+                    for (PointsToNode *N : *instruction_lout)
                         s.insert(std::make_pair(N, factory.getUnknown()));
-                for (auto P = instruction_ain->restriction_begin(instruction_lout), E = instruction_ain->restriction_end(instruction_lout); P != E; ++P)
-                    if (reachable.find(P->first) == reachable.end())
-                        s.insert(*P);
+                else {
+                    for (PointsToNode *N : reachable)
+                        if (instruction_lout->find(N) != instruction_lout->end())
+                            s.insert(std::make_pair(N, factory.getUnknown()));
+                    for (auto P = instruction_ain->restriction_begin(instruction_lout), E = instruction_ain->restriction_end(instruction_lout); P != E; ++P)
+                        if (reachable.find(P->first) == reachable.end())
+                            s.insert(*P);
+                }
 
                 if (s != *instruction_aout) {
                     instruction_aout->clear();
@@ -1086,7 +1123,6 @@ void LivenessPointsTo::runOnModule(Module &M) {
             GlobalsMap.insert(std::make_pair(&F, Vector));
         }
     }
-
     globals.clear();
     for (auto I = M.global_begin(), E = M.global_end(); I != E; ++I) {
         auto N = factory.getNode(&*I);

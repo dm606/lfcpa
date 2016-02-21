@@ -18,6 +18,7 @@ class PointsToNode {
 public:
     enum PointsToNodeKind {
         PTNK_Unknown,
+        PTNK_Dummy,
         PTNK_Value,
         PTNK_Global,
         PTNK_NoAlias,
@@ -84,6 +85,28 @@ public:
     }
 };
 
+class DummyPointsToNode : public PointsToNode {
+    private:
+        std::string stdName;
+    public:
+        DummyPointsToNode(const CallInst *CI) : PointsToNode(PTNK_Dummy) {
+            stdName = "dummy:" + CI->getName().str();
+            name = StringRef(stdName);
+        }
+
+        bool hasPointerType() const override {
+            return true;
+        }
+
+        bool isSummaryNode() const override {
+            // Dummy nodes are never considered to be summary nodes.
+            return false;
+        }
+
+        static bool classof(const PointsToNode *N) {
+            return N->getKind() == PTNK_Dummy;
+        }
+};
 
 class UnknownPointsToNode : public PointsToNode {
     private:
@@ -210,7 +233,7 @@ class GEPPointsToNode : public PointsToNode {
             assert(Pointee == nullptr || Parent->singlePointee());
         }
 
-        GEPPointsToNode(PointsToNode *Parent, const GEPOperator *V, PointsToNode *Pointee) : GEPPointsToNode(Parent, V->getType(), V->idx_begin(), V->idx_end(), Pointee) { }
+        GEPPointsToNode(PointsToNode *Parent, const Type *Type, const GEPOperator *V, PointsToNode *Pointee) : GEPPointsToNode(Parent, Type, V->idx_begin(), V->idx_end(), Pointee) { }
 
         bool hasPointerType() const override { return pointerType; }
         bool multipleStackFrames() const override { return true; }

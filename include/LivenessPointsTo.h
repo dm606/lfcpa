@@ -27,9 +27,9 @@ private:
     void computeLout(Instruction *, LivenessSet * , IntraproceduralPointsTo *, PointsToRelation *, bool, const GlobalVector &);
     bool computeAin(Instruction *, Function *, PointsToRelation *, LivenessSet *, IntraproceduralPointsTo *);
     LivenessSet *getReachable(Function *, CallInst *, PointsToRelation *, LivenessSet *, GlobalVector &);
-    PointsToRelation *getReachablePT(Function *, CallInst *, PointsToRelation *, GlobalVector &);
+    PointsToRelation *getReachablePT(Function *, CallInst *, PointsToRelation *, GlobalVector &, bool &);
     void insertReachable(Function *, CallInst *, LivenessSet &, LivenessSet &, PointsToRelation *, GlobalVector &);
-    void insertReachableDeclaration(CallInst *, LivenessSet &, PointsToRelation *);
+    void insertReachableDeclaration(CallInst *, LivenessSet &, PointsToRelation *, bool &);
     void insertReachablePT(CallInst *, PointsToRelation &, PointsToRelation &, PointsToRelation *, std::set<PointsToNode *>&, GlobalVector &);
     bool getCalledFunctionResult(const CallString &, Function *, std::pair<LivenessSet, PointsToRelation>&);
     std::set<PointsToNode *> getReturnValues(const Function *);
