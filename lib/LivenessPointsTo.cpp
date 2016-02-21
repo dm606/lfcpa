@@ -510,8 +510,14 @@ PointsToRelation * LivenessPointsTo::getReachablePT(Function *Callee, CallInst *
         }
         if (seen.insert(N).second) {
             reachable.insert(N);
-            for (auto P = Ain->pointee_begin(N), E = Ain->pointee_end(N); P != E; ++P)
+            bool noPointees = true;
+            for (auto P = Ain->pointee_begin(N), E = Ain->pointee_end(N); P != E; ++P) {
+                noPointees = false;
                 insertReachable(*P);
+            }
+
+            if ((N->hasPointerType() || N->isSummaryNode()) && noPointees)
+                EverythingReachable = true;
 
             // If a node is reachable, then so are its subnodes.
             for (auto *Child : N->children)
@@ -601,13 +607,18 @@ void LivenessPointsTo::insertReachableDeclaration(CallInst *CI, LivenessSet &Rea
     std::function<void(PointsToNode *)> insertReachable = [&](PointsToNode *N) {
         if (seen.insert(N).second) {
             Reachable.insert(N);
+            bool noPointees = true;
             for (auto P = Ain->pointee_begin(N), E = Ain->pointee_end(N); P != E; ++P) {
                 if (isa<UnknownPointsToNode>(*P)) {
                     EverythingReachable = true;
                     return;
                 }
+                noPointees = false;
                 insertReachable(*P);
             }
+
+            if ((N->hasPointerType() || N->isSummaryNode()) && noPointees)
+                EverythingReachable = true;
 
             // If a node is reachable, then so are its subnodes.
             for (auto *Child : N->children)
