@@ -30,7 +30,7 @@ private:
     LivenessSet *getReachable(Function *, CallInst *, PointsToRelation *, LivenessSet *, GlobalVector &);
     PointsToRelation *getReachablePT(Function *, CallInst *, PointsToRelation *, GlobalVector &, YesNoMaybe &);
     void insertReachable(Function *, CallInst *, LivenessSet &, LivenessSet &, PointsToRelation *, GlobalVector &);
-    void insertReachableDeclaration(CallInst *, LivenessSet &, PointsToRelation *, YesNoMaybe &);
+    void insertReachableDeclaration(CallInst *, LivenessSet &, LivenessSet &, PointsToRelation *, YesNoMaybe &);
     void insertReachablePT(CallInst *, PointsToRelation &, PointsToRelation &, PointsToRelation *, LivenessSet &, std::set<PointsToNode *>&, GlobalVector &);
     bool getCalledFunctionResult(const CallString &, Function *, std::pair<LivenessSet, PointsToRelation>&);
     std::set<PointsToNode *> getReturnValues(const Function *);

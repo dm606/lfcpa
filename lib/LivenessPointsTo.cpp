@@ -460,8 +460,23 @@ LivenessSet *LivenessPointsTo::getReachable(Function *Callee, CallInst *CI, Poin
     std::function<void(PointsToNode *)> insertReachable = [&](PointsToNode *N) {
         if (seen.insert(N).second) {
             reachable.insert(N);
-            for (auto P = Aout->pointee_begin(N), E = Aout->pointee_end(N); P != E; ++P)
+            for (auto P = Aout->pointee_begin(N), E = Aout->pointee_end(N); P != E; ++P) {
                 insertReachable(*P);
+                // If an alloca or noalias node can be killed by a child, then
+                // it needs to be marked as a summary node because we conflate
+                // the different frames on the call stack. This is imprecise,
+                // but safe.
+                if ((*P)->basedOnNoAlias() && !(*P)->isSummaryNode()) {
+                    (*P)->markAsSummaryNode();
+                    createdSummaryNode = true;
+                }
+                for (auto *Child : (*P)->children) {
+                    if (Child->basedOnNoAlias() && !Child->isSummaryNode()) {
+                        Child->markAsSummaryNode();
+                        createdSummaryNode = true;
+                    }
+                }
+            }
 
             // If a node is reachable, then so are its subnodes.
             for (auto *Child : N->children)
@@ -480,8 +495,18 @@ LivenessSet *LivenessPointsTo::getReachable(Function *Callee, CallInst *CI, Poin
         assert(Arg != Callee->arg_end() && "Argument count mismatch");
         Argument *A = &*Arg;
         PointsToNode *ANode = factory.getNode(A);
-        for (auto P = Aout->pointee_begin(N), E = Aout->pointee_end(N); P != E; ++P)
+        for (auto P = Aout->pointee_begin(N), E = Aout->pointee_end(N); P != E; ++P) {
+            // If an alloca or noalias node can be killed by a child, then
+            // it needs to be marked as a summary node because we conflate
+            // the different frames on the call stack. This is imprecise,
+            // but safe.
+            if ((*P)->basedOnNoAlias() && !(*P)->isSummaryNode()) {
+                errs() << "Marking " << (*P)->getName() << " as summary node.\n";
+                (*P)->markAsSummaryNode();
+                createdSummaryNode = true;
+            }
             insertReachable(*P);
+        }
         if (N->singlePointee() || Lout->find(N) != Lout->end())
             L->insert(ANode);
         ++Arg;
@@ -613,7 +638,7 @@ void LivenessPointsTo::insertReachable(Function *Callee, CallInst *CI, LivenessS
             N.insert(Node);
 }
 
-void LivenessPointsTo::insertReachableDeclaration(CallInst *CI, LivenessSet &Reachable, PointsToRelation *Ain, YesNoMaybe &EverythingReachable) {
+void LivenessPointsTo::insertReachableDeclaration(CallInst *CI, LivenessSet &Reachable, LivenessSet &Killable, PointsToRelation *Ain, YesNoMaybe &EverythingReachable) {
     std::set<PointsToNode *> seen;
     // FIXME: Can globals be accessed by the function?
     // This is roughly the mark phase from mark-and-sweep garbage collection. We
@@ -629,6 +654,12 @@ void LivenessPointsTo::insertReachableDeclaration(CallInst *CI, LivenessSet &Rea
                     return;
                 }
                 noPointees = false;
+                // A node can only be killed if it is pointed to by something
+                // that is reachable, or is a child of something that is
+                // killable.
+                Killable.insert(*P);
+                for (auto *Child : (*P)->children)
+                    Killable.insert(Child);
                 insertReachable(*P);
             }
             if (noPointees && (N->hasPointerType() || N->isSummaryNode()) && !N->singlePointee() && EverythingReachable == No)
@@ -906,7 +937,7 @@ void LivenessPointsTo::runOnFunction(Function *F, const CallString &CS, Intrapro
                     }
                     else {
                         for (auto N : *instruction_lout)
-                            if (N != CINode && ExitL->find(N) == ExitL->end())
+                            if (N != CINode && (ExitL->find(N) == ExitL->end() || N->multipleStackFrames()))
                                 survivesCall.insert(N);
                     }
 
@@ -938,7 +969,7 @@ void LivenessPointsTo::runOnFunction(Function *F, const CallString &CS, Intrapro
                     }
                     else {
                         for (auto N : *instruction_lout)
-                            if (N != CINode && ExitL->find(N) == ExitL->end())
+                            if (N != CINode && (ExitL->find(N) == ExitL->end() || N->multipleStackFrames()))
                                 survivesCall.insert(N);
                     }
 
@@ -968,8 +999,8 @@ void LivenessPointsTo::runOnFunction(Function *F, const CallString &CS, Intrapro
                 // reachable from it, and will kill anything that is reachable
                 // from it.
                 YesNoMaybe EverythingReachable = No;
-                LivenessSet reachable;
-                insertReachableDeclaration(CI, reachable, instruction_ain, EverythingReachable);
+                LivenessSet reachable, killable;
+                insertReachableDeclaration(CI, reachable, killable, instruction_ain, EverythingReachable);
 
                 LivenessSet n = *instruction_lout;
 
@@ -1008,7 +1039,8 @@ void LivenessPointsTo::runOnFunction(Function *F, const CallString &CS, Intrapro
                 // reachable, because we might discover what the node points to
                 // later.
                 reachable = LivenessSet();
-                insertReachableDeclaration(CI, reachable, instruction_ain, EverythingReachable);
+                killable = LivenessSet();
+                insertReachableDeclaration(CI, reachable, killable, instruction_ain, EverythingReachable);
                 if (!CINode->singlePointee())
                     reachable.insert(CINode);
                 PointsToRelation s;
@@ -1017,11 +1049,13 @@ void LivenessPointsTo::runOnFunction(Function *F, const CallString &CS, Intrapro
                         s.insert(std::make_pair(N, factory.getUnknown()));
                 }
                 else {
-                    for (PointsToNode *N : reachable)
-                        if (N == CINode || instruction_lout->find(N) != instruction_lout->end())
+                    if (instruction_lout->find(CINode) != instruction_lout->end())
+                        s.insert(std::make_pair(CINode, factory.getUnknown()));
+                    for (PointsToNode *N : killable)
+                        if (instruction_lout->find(N) != instruction_lout->end())
                             s.insert(std::make_pair(N, factory.getUnknown()));
                     for (auto P = instruction_ain->restriction_begin(instruction_lout), E = instruction_ain->restriction_end(instruction_lout); P != E; ++P)
-                        if (reachable.find(P->first) == reachable.end())
+                        if (killable.find(P->first) == killable.end())
                             s.insert(*P);
                 }
 

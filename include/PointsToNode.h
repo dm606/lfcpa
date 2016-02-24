@@ -43,6 +43,7 @@ public:
     virtual bool hasPointerType() const { return false; }
     virtual bool multipleStackFrames() const { return false; }
     virtual bool singlePointee() const { return false; }
+    virtual bool basedOnNoAlias() const { return false; }
     virtual PointsToNode *getSinglePointee() const {
         llvm_unreachable("This node doesn't always have a single pointee.");
     }
@@ -101,6 +102,10 @@ class DummyPointsToNode : public PointsToNode {
         bool isSummaryNode() const override {
             // Dummy nodes are never considered to be summary nodes.
             return false;
+        }
+
+        bool multipleStackFrames() const override {
+            return true;
         }
 
         static bool classof(const PointsToNode *N) {
@@ -198,6 +203,7 @@ class NoAliasPointsToNode : public PointsToNode {
 
         bool hasPointerType() const override { return isPointer; }
         bool multipleStackFrames() const override { return true; }
+        bool basedOnNoAlias() const override { return true; }
 
         static bool classof(const PointsToNode *N) {
             return N->getKind() == PTNK_NoAlias;
@@ -238,6 +244,7 @@ class GEPPointsToNode : public PointsToNode {
         bool hasPointerType() const override { return pointerType; }
         bool multipleStackFrames() const override { return true; }
         bool singlePointee() const override { return Pointee != nullptr; }
+        bool basedOnNoAlias() const override { return Parent->basedOnNoAlias(); }
         PointsToNode *getSinglePointee() const override {
             assert(Pointee != nullptr);
             return Pointee;
