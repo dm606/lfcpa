@@ -156,7 +156,7 @@ public:
 
         // If a value is a summary node, it may be, for example, an array of
         // pointers, and therefore may have pointees.
-        if (isa<UnknownPointsToNode>(N.first) || (!N.first->hasPointerType() && !N.first->isSummaryNode()))
+        if (isa<UnknownPointsToNode>(N.first) || (!N.first->hasPointerType() && !N.first->isAlwaysSummaryNode() && !N.first->isEscaping()))
             return false;
 
         return s.insert(N).second;

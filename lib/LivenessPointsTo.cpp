@@ -20,7 +20,7 @@ std::set<PointsToNode *> LivenessPointsTo::getPointsToSet(const Value *V, bool &
     if (const Instruction *I = dyn_cast<Instruction>(V)) {
         PointsToNode *N = factory.getNode(I);
         // If N is a summary node, the data may include pointees of fields.
-        if (N->isSummaryNode())
+        if (N->isAlwaysSummaryNode())
             AllowMustAlias = false;
         const BasicBlock *BB = I->getParent();
         const Function *F = BB->getParent();
@@ -69,7 +69,8 @@ std::set<PointsToNode *> LivenessPointsTo::getPointsToSet(const Value *V, bool &
     return std::set<PointsToNode *>();
 }
 
-void LivenessPointsTo::subtractKill(LivenessSet &Lin,
+void LivenessPointsTo::subtractKill(const CallString &CS,
+                                    LivenessSet &Lin,
                                     Instruction *I,
                                     PointsToRelation *Ain) {
     PointsToNode *N = factory.getNode(I);
@@ -77,7 +78,7 @@ void LivenessPointsTo::subtractKill(LivenessSet &Lin,
     // Note that we don't kill GEPs where they are defined; instead, we kill
     // them where the parent is defined, so that their points-to information is
     // preserved for longer.
-    if (!N->isSummaryNode() && !isa<GetElementPtrInst>(I))
+    if (!N->isSummaryNode(CS) && !isa<GetElementPtrInst>(I))
         Lin.erase(N);
 
     if (StoreInst *SI = dyn_cast<StoreInst>(I)) {
@@ -88,7 +89,7 @@ void LivenessPointsTo::subtractKill(LivenessSet &Lin,
         PointsToNode *PointedTo = nullptr;
 
         for (auto P = Ain->pointee_begin(PtrNode), E = Ain->pointee_end(PtrNode); P != E; ++P) {
-            if ((*P)->isSummaryNode() || PointedTo != nullptr) {
+            if ((*P)->isSummaryNode(CS) || PointedTo != nullptr) {
                 strongUpdate = false;
                 break;
             }
@@ -311,7 +312,7 @@ std::set<PointsToNode *> LivenessPointsTo::getPointee(Instruction *I, PointsToRe
 }
 
 std::pair<PointsToNode *, PointsToNode *> makePointsToPair(PointsToNode *Pointer, PointsToNode *Pointee) {
-    if (Pointer->pointeesAreSummaryNodes() && !Pointee->isSummaryNode()) {
+    if (Pointer->pointeesAreSummaryNodes() && !Pointee->isAlwaysSummaryNode()) {
         // If we turn the pointee into a summary node, this may affect what
         // stores to the pointee do. However, these will be added to the
         // worklist again.
@@ -466,13 +467,13 @@ LivenessSet *LivenessPointsTo::getReachable(Function *Callee, CallInst *CI, Poin
                 // it needs to be marked as a summary node because we conflate
                 // the different frames on the call stack. This is imprecise,
                 // but safe.
-                if ((*P)->basedOnNoAlias() && !(*P)->isSummaryNode()) {
-                    (*P)->markAsSummaryNode();
+                if ((*P)->basedOnNoAlias() && !(*P)->isEscaping()) {
+                    (*P)->markAsEscaping();
                     createdSummaryNode = true;
                 }
                 for (auto *Child : (*P)->children) {
-                    if (Child->basedOnNoAlias() && !Child->isSummaryNode()) {
-                        Child->markAsSummaryNode();
+                    if (Child->basedOnNoAlias() && !Child->isEscaping()) {
+                        Child->markAsEscaping();
                         createdSummaryNode = true;
                     }
                 }
@@ -500,9 +501,8 @@ LivenessSet *LivenessPointsTo::getReachable(Function *Callee, CallInst *CI, Poin
             // it needs to be marked as a summary node because we conflate
             // the different frames on the call stack. This is imprecise,
             // but safe.
-            if ((*P)->basedOnNoAlias() && !(*P)->isSummaryNode()) {
-                errs() << "Marking " << (*P)->getName() << " as summary node.\n";
-                (*P)->markAsSummaryNode();
+            if ((*P)->basedOnNoAlias() && !(*P)->isEscaping()) {
+                (*P)->markAsEscaping();
                 createdSummaryNode = true;
             }
             insertReachable(*P);
@@ -527,7 +527,7 @@ LivenessSet *LivenessPointsTo::getReachable(Function *Callee, CallInst *CI, Poin
     return L;
 }
 
-PointsToRelation * LivenessPointsTo::getReachablePT(Function *Callee, CallInst *CI, PointsToRelation *Ain, GlobalVector &Globals, YesNoMaybe &EverythingReachable) {
+PointsToRelation * LivenessPointsTo::getReachablePT(const CallString &CS, Function *Callee, CallInst *CI, PointsToRelation *Ain, GlobalVector &Globals, YesNoMaybe &EverythingReachable) {
     // This is roughly the mark phase from mark-and-sweep garbage collection. We
     // begin with the roots, which are the arguments of the function and global
     // variables, then determine what is reachable using the points-to relation.
@@ -548,7 +548,7 @@ PointsToRelation * LivenessPointsTo::getReachablePT(Function *Callee, CallInst *
                 noPointees = false;
             }
 
-            if (noPointees && (N->hasPointerType() || N->isSummaryNode()) && EverythingReachable == No) {
+            if (noPointees && (N->hasPointerType() || N->isSummaryNode(CS)) && EverythingReachable == No) {
                 assert(!N->singlePointee());
                 EverythingReachable = Maybe;
             }
@@ -577,7 +577,7 @@ PointsToRelation * LivenessPointsTo::getReachablePT(Function *Callee, CallInst *
             noPointees = false;
             PT->insert(makePointsToPair(ANode, *P));
         }
-        if (noPointees && (N->hasPointerType() || N->isSummaryNode()) && EverythingReachable == No) {
+        if (noPointees && (N->hasPointerType() || N->isSummaryNode(CS)) && EverythingReachable == No) {
             assert(!N->singlePointee());
             EverythingReachable = Maybe;
         }
@@ -638,7 +638,7 @@ void LivenessPointsTo::insertReachable(Function *Callee, CallInst *CI, LivenessS
             N.insert(Node);
 }
 
-void LivenessPointsTo::insertReachableDeclaration(CallInst *CI, LivenessSet &Reachable, LivenessSet &Killable, PointsToRelation *Ain, YesNoMaybe &EverythingReachable) {
+void LivenessPointsTo::insertReachableDeclaration(const CallString &CS, CallInst *CI, LivenessSet &Reachable, LivenessSet &Killable, PointsToRelation *Ain, YesNoMaybe &EverythingReachable) {
     std::set<PointsToNode *> seen;
     // FIXME: Can globals be accessed by the function?
     // This is roughly the mark phase from mark-and-sweep garbage collection. We
@@ -662,7 +662,7 @@ void LivenessPointsTo::insertReachableDeclaration(CallInst *CI, LivenessSet &Rea
                     Killable.insert(Child);
                 insertReachable(*P);
             }
-            if (noPointees && (N->hasPointerType() || N->isSummaryNode()) && !N->singlePointee() && EverythingReachable == No)
+            if (noPointees && (N->hasPointerType() || N->isSummaryNode(CS)) && !N->singlePointee() && EverythingReachable == No)
                 EverythingReachable = Maybe;
 
             // If a node is reachable, then so are its subnodes.
@@ -887,7 +887,7 @@ void LivenessPointsTo::runOnFunction(Function *F, const CallString &CS, Intrapro
                 GlobalVector &CalledGlobals = G->second;
                 // Add to the list of calls made by the function for analysis later.
                 YesNoMaybe EverythingReachable = No;
-                auto EntryPT = getReachablePT(Called, CI, instruction_ain, CalledGlobals, EverythingReachable);
+                auto EntryPT = getReachablePT(CS, Called, CI, instruction_ain, CalledGlobals, EverythingReachable);
                 auto ExitL = getReachable(Called, CI, instruction_ain, instruction_lout, CalledGlobals);
                 ExitL->insert(dummy);
 
@@ -1000,7 +1000,7 @@ void LivenessPointsTo::runOnFunction(Function *F, const CallString &CS, Intrapro
                 // from it.
                 YesNoMaybe EverythingReachable = No;
                 LivenessSet reachable, killable;
-                insertReachableDeclaration(CI, reachable, killable, instruction_ain, EverythingReachable);
+                insertReachableDeclaration(CS, CI, reachable, killable, instruction_ain, EverythingReachable);
 
                 LivenessSet n = *instruction_lout;
 
@@ -1040,7 +1040,7 @@ void LivenessPointsTo::runOnFunction(Function *F, const CallString &CS, Intrapro
                 // later.
                 reachable = LivenessSet();
                 killable = LivenessSet();
-                insertReachableDeclaration(CI, reachable, killable, instruction_ain, EverythingReachable);
+                insertReachableDeclaration(CS, CI, reachable, killable, instruction_ain, EverythingReachable);
                 if (!CINode->singlePointee())
                     reachable.insert(CINode);
                 PointsToRelation s;
@@ -1070,7 +1070,7 @@ void LivenessPointsTo::runOnFunction(Function *F, const CallString &CS, Intrapro
             // Compute lin for the current instruction.
             LivenessSet n;
             n.insertAll(*instruction_lout);
-            subtractKill(n, I, instruction_ain);
+            subtractKill(CS, n, I, instruction_ain);
             unionRef(n, I, instruction_lout, instruction_ain);
             // If the two sets are the same, then no changes need to be made to lin,
             // so don't do anything here. Otherwise, we need to update lin and add
@@ -1084,7 +1084,7 @@ void LivenessPointsTo::runOnFunction(Function *F, const CallString &CS, Intrapro
             PointsToRelation s;
             // Compute aout for the current instruction.
             LivenessSet notKilled = *instruction_lout;
-            subtractKill(notKilled, I, instruction_ain);
+            subtractKill(CS, notKilled, I, instruction_ain);
             s.unionRelationRestriction(instruction_ain, &notKilled);
             LivenessSet def =
                 getRestrictedDef(I, instruction_ain, instruction_lout);

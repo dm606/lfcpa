@@ -12,6 +12,8 @@
 #include "llvm/Support/Casting.h"
 #include "llvm/Support/raw_ostream.h"
 
+#include "CallString.h"
+
 using namespace llvm;
 
 class PointsToNode {
@@ -34,7 +36,7 @@ protected:
     SmallVector<PointsToNode *, 4> children;
     StringRef name;
     static int nextId;
-    bool summaryNode = false, summaryNodePointees = false, fieldSensitive = true;
+    bool summaryNode = false, escapingNode = false, summaryNodePointees = false, fieldSensitive = true;
 
     PointsToNode(PointsToNodeKind K) : Kind(K) {}
 public:
@@ -59,7 +61,17 @@ public:
         assert(!singlePointee());
         summaryNode = true;
     }
-    virtual bool isSummaryNode() const {
+    inline void markAsEscaping() {
+        assert(!singlePointee());
+        escapingNode = true;
+    }
+    virtual bool isAlwaysSummaryNode() const {
+        return summaryNode;
+    }
+    virtual bool isEscaping() const {
+        return escapingNode;
+    }
+    virtual bool isSummaryNode(const CallString &) const {
         return summaryNode;
     }
     inline bool pointeesAreSummaryNodes() const {
@@ -99,7 +111,17 @@ class DummyPointsToNode : public PointsToNode {
             return true;
         }
 
-        bool isSummaryNode() const override {
+        bool isAlwaysSummaryNode() const override {
+            // Dummy nodes are never considered to be summary nodes.
+            return false;
+        }
+
+        bool isEscaping() const override {
+            // Dummy nodes are never considered to escape.
+            return false;
+        }
+
+        bool isSummaryNode(const CallString &) const override {
             // Dummy nodes are never considered to be summary nodes.
             return false;
         }
@@ -121,8 +143,18 @@ class UnknownPointsToNode : public PointsToNode {
             name = StringRef(stdName);
         }
 
-        bool isSummaryNode() const override {
+        bool isAlwaysSummaryNode() const override {
+            // Unknowns nodes are never considered to be summary nodes.
+            return false;
+        }
+
+        bool isSummaryNode(const CallString &) const override {
             // Unknown nodes are never considered to be summary nodes.
+            return false;
+        }
+
+        bool isEscaping() const override {
+            // Unknown nodes are never considered to escape.
             return false;
         }
 
@@ -186,13 +218,14 @@ class NoAliasPointsToNode : public PointsToNode {
     private:
         std::string stdName;
         bool isPointer;
+        const Function *Definer;
     public:
-        NoAliasPointsToNode(const AllocaInst *AI) : PointsToNode(PTNK_NoAlias) {
+        NoAliasPointsToNode(const AllocaInst *AI) : PointsToNode(PTNK_NoAlias), Definer(AI->getParent()->getParent()) {
            stdName = "alloca:" + AI->getName().str();
            name = StringRef(stdName);
            isPointer = AI->getAllocatedType()->isPointerTy();
         }
-        NoAliasPointsToNode(const CallInst *CI) : PointsToNode(PTNK_NoAlias) {
+        NoAliasPointsToNode(const CallInst *CI) : PointsToNode(PTNK_NoAlias), Definer(CI->getParent()->getParent()) {
             assert(CI->paramHasAttr(0, Attribute::NoAlias));
             stdName = "noalias:" + CI->getName().str();
             name = StringRef(stdName);
@@ -204,6 +237,15 @@ class NoAliasPointsToNode : public PointsToNode {
         bool hasPointerType() const override { return isPointer; }
         bool multipleStackFrames() const override { return true; }
         bool basedOnNoAlias() const override { return true; }
+        bool isSummaryNode(const CallString &CS) const override {
+            if (summaryNode)
+                return true;
+
+            if (CS.containsCallTo(Definer))
+                return true;
+
+            return false;
+        }
 
         static bool classof(const PointsToNode *N) {
             return N->getKind() == PTNK_NoAlias;

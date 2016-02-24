@@ -23,14 +23,14 @@ private:
     LivenessSet getRestrictedDef(Instruction *, PointsToRelation *, LivenessSet *);
     void insertPointedToBy(std::set<PointsToNode *> &, Value *, PointsToRelation *);
     std::set<PointsToNode *> getPointee(Instruction *, PointsToRelation *);
-    void subtractKill(LivenessSet &, Instruction *, PointsToRelation *);
+    void subtractKill(const CallString &CS, LivenessSet &, Instruction *, PointsToRelation *);
     void unionRef(LivenessSet &, Instruction *, LivenessSet *, PointsToRelation *);
     void computeLout(Instruction *, LivenessSet * , IntraproceduralPointsTo *, PointsToRelation *, bool, const GlobalVector &);
     bool computeAin(Instruction *, Function *, PointsToRelation *, LivenessSet *, IntraproceduralPointsTo *, bool InsertAtFirstInstruction);
     LivenessSet *getReachable(Function *, CallInst *, PointsToRelation *, LivenessSet *, GlobalVector &);
-    PointsToRelation *getReachablePT(Function *, CallInst *, PointsToRelation *, GlobalVector &, YesNoMaybe &);
+    PointsToRelation *getReachablePT(const CallString &, Function *, CallInst *, PointsToRelation *, GlobalVector &, YesNoMaybe &);
     void insertReachable(Function *, CallInst *, LivenessSet &, LivenessSet &, PointsToRelation *, GlobalVector &);
-    void insertReachableDeclaration(CallInst *, LivenessSet &, LivenessSet &, PointsToRelation *, YesNoMaybe &);
+    void insertReachableDeclaration(const CallString &, CallInst *, LivenessSet &, LivenessSet &, PointsToRelation *, YesNoMaybe &);
     void insertReachablePT(CallInst *, PointsToRelation &, PointsToRelation &, PointsToRelation *, LivenessSet &, std::set<PointsToNode *>&, GlobalVector &);
     bool getCalledFunctionResult(const CallString &, Function *, std::pair<LivenessSet, PointsToRelation>&);
     std::set<PointsToNode *> getReturnValues(const Function *);

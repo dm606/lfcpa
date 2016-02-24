@@ -3,6 +3,7 @@
 
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/IR/Function.h"
+#include "llvm/IR/Instructions.h"
 
 using namespace llvm;
 
@@ -37,6 +38,18 @@ class CallString {
             assert(!isCyclic());
             assert(!isEmpty());
             return nonCyclic.back();
+        }
+
+        inline bool containsCallTo(const Function *F) const {
+            for (Instruction *I : nonCyclic)
+                if (CallInst *CI = dyn_cast<CallInst>(I))
+                    if (CI->getCalledFunction() == nullptr || CI->getCalledFunction() == F)
+                        return true;
+            for (Instruction *I : cyclic)
+                if (CallInst *CI = dyn_cast<CallInst>(I))
+                    if (CI->getCalledFunction() == nullptr || CI->getCalledFunction() == F)
+                        return true;
+            return false;
         }
     private:
         SmallVector<Instruction *, 8> nonCyclic;
