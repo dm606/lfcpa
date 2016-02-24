@@ -65,6 +65,14 @@ class LivenessSet {
         }
 
         void dump() const;
+
+        bool isSubset(LivenessSet &S) {
+            for (auto N : S) {
+                if (s.find(N) == s.end())
+                    return false;
+            }
+            return true;
+        }
     private:
         std::set<PointsToNode *> s;
 };

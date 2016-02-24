@@ -135,6 +135,11 @@ IntraproceduralPointsTo *PointsToData::getAtLongestPrefix(const Function *F, con
     IntraproceduralPointsTo *Result = nullptr;
     int prefixLength = 0;
     for (auto P : *V) {
+        // If the call string is empty, then the function was not analysed as a
+        // callee, so the data should not be used here.
+        if (P.first == CallString::empty())
+            continue;
+
         if (P.first.isCyclic()) {
             // We only consider exact matches here.
             if (P.first.matches(CS))

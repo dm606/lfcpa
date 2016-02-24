@@ -252,8 +252,28 @@ public:
         return const_restriction_iterator(s.end(), s.end(), S->begin(), S->end());
     }
 
-    bool empty() const {
+    inline bool empty() const {
         return s.empty();
+    }
+
+    bool isSubset(PointsToRelation &R) {
+        for (auto P : R.s) {
+            bool found = false;
+            for (auto Q : s) {
+                if (Q == P || (Q.first == P.first && isa<UnknownPointsToNode>(Q.second)))
+                    found = true;
+            }
+            if (!found)
+                return false;
+        }
+        return true;
+    }
+
+    inline void insertEverythingInto(LivenessSet &S) {
+        for (auto P : s) {
+            S.insert(P.first);
+            S.insert(P.second);
+        }
     }
 
     void dump() const;

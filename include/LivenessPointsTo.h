@@ -14,6 +14,7 @@ using namespace llvm;
 
 class LivenessPointsTo {
 public:
+    enum YesNoMaybe { Yes, No, Maybe };
     void runOnModule(Module &);
     ProcedurePointsTo *getPointsTo(Function &) const;
     std::set<PointsToNode *> getPointsToSet(const Value *, bool &);
@@ -25,12 +26,12 @@ private:
     void subtractKill(LivenessSet &, Instruction *, PointsToRelation *);
     void unionRef(LivenessSet &, Instruction *, LivenessSet *, PointsToRelation *);
     void computeLout(Instruction *, LivenessSet * , IntraproceduralPointsTo *, PointsToRelation *, bool, const GlobalVector &);
-    bool computeAin(Instruction *, Function *, PointsToRelation *, LivenessSet *, IntraproceduralPointsTo *);
+    bool computeAin(Instruction *, Function *, PointsToRelation *, LivenessSet *, IntraproceduralPointsTo *, bool InsertAtFirstInstruction);
     LivenessSet *getReachable(Function *, CallInst *, PointsToRelation *, LivenessSet *, GlobalVector &);
-    PointsToRelation *getReachablePT(Function *, CallInst *, PointsToRelation *, GlobalVector &, bool &);
+    PointsToRelation *getReachablePT(Function *, CallInst *, PointsToRelation *, GlobalVector &, YesNoMaybe &);
     void insertReachable(Function *, CallInst *, LivenessSet &, LivenessSet &, PointsToRelation *, GlobalVector &);
-    void insertReachableDeclaration(CallInst *, LivenessSet &, PointsToRelation *, bool &);
-    void insertReachablePT(CallInst *, PointsToRelation &, PointsToRelation &, PointsToRelation *, std::set<PointsToNode *>&, GlobalVector &);
+    void insertReachableDeclaration(CallInst *, LivenessSet &, PointsToRelation *, YesNoMaybe &);
+    void insertReachablePT(CallInst *, PointsToRelation &, PointsToRelation &, PointsToRelation *, LivenessSet &, std::set<PointsToNode *>&, GlobalVector &);
     bool getCalledFunctionResult(const CallString &, Function *, std::pair<LivenessSet, PointsToRelation>&);
     std::set<PointsToNode *> getReturnValues(const Function *);
     void runOnFunction(Function *, const CallString &, IntraproceduralPointsTo *, PointsToRelation *, LivenessSet *, SmallVector<std::tuple<CallInst *, Function *, PointsToRelation *, LivenessSet *>, 8> &);
