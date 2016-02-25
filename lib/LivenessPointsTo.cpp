@@ -14,6 +14,10 @@
 #include "PointsToData.h"
 #include "PointsToNode.h"
 
+// Some statistics (LLVM_STATISTIC doesn't work out of tree)
+unsigned LivenessPointsTo::worklistIterations = 0;
+unsigned LivenessPointsTo::timesRanOnFunction = 0;
+
 bool createdSummaryNode = false;
 
 std::set<PointsToNode *> LivenessPointsTo::getPointsToSet(const Value *V, bool &AllowMustAlias) {
@@ -228,7 +232,8 @@ std::set<PointsToNode *> LivenessPointsTo::getPointee(Instruction *I, PointsToRe
         PointsToNode *PtrNode = factory.getNode(Ptr);
         std::set<PointsToNode *> t;
         for (auto P = Ain->pointee_begin(PtrNode), E = Ain->pointee_end(PtrNode); P != E; ++P) {
-            // FIXME: Make the LoadInst point to unknown if the pointer points to unknown?
+            if (isa<UnknownPointsToNode>(*P))
+                s.insert(*P);
             t.insert(*P);
         }
         for (auto P = Ain->restriction_begin(t), E = Ain->restriction_end(t); P != E; ++P)
@@ -792,6 +797,7 @@ std::set<PointsToNode *> LivenessPointsTo::getReturnValues(const Function *F) {
 }
 
 void LivenessPointsTo::runOnFunction(Function *F, const CallString &CS, IntraproceduralPointsTo *Result, PointsToRelation *EntryPointsTo, LivenessSet *ExitLiveness, SmallVector<std::tuple<CallInst *, Function *, PointsToRelation *, LivenessSet *>, 8> &Calls) {
+    timesRanOnFunction++;
     assert(!F->isDeclaration() && "Can only run on definitions.");
 
     // The result of the function is lin and aout (since liveness is propagated
@@ -848,6 +854,8 @@ void LivenessPointsTo::runOnFunction(Function *F, const CallString &CS, Intrapro
 
     // Update points-to and liveness information until it converges.
     while (!worklist.empty()) {
+        worklistIterations++;
+
         auto II = worklist.begin();
         Instruction *I = *II;
         worklist.erase(I);

@@ -22,6 +22,8 @@ struct TestPass : public ModulePass {
     bool runOnModule(Module &M) override {
         analysis.runOnModule(M);
         errs() << "\n";
+        errs() << "Worklist iterations: " << analysis.worklistIterations << "\n";
+        errs() << "Times ran on function: " << analysis.timesRanOnFunction << "\n";
 
         for (Function &F : M) {
             if (F.isDeclaration())

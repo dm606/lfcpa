@@ -18,6 +18,7 @@ public:
     void runOnModule(Module &);
     ProcedurePointsTo *getPointsTo(Function &) const;
     std::set<PointsToNode *> getPointsToSet(const Value *, bool &);
+    static unsigned worklistIterations, timesRanOnFunction;
 private:
     typedef SmallVector<PointsToNode *, 16> GlobalVector;
     LivenessSet getRestrictedDef(Instruction *, PointsToRelation *, LivenessSet *);
