@@ -119,6 +119,11 @@ void LivenessPointsTo::subtractKill(const CallString &CS,
             // else.
         }
     }
+    else if (AllocaInst *AI = dyn_cast<AllocaInst>(I)) {
+        PointsToNode *Alloca = factory.getNoAliasNode(AI);
+        if (!Alloca->isSummaryNode(CS))
+            Lin.erase(Alloca);
+    }
 }
 
 void LivenessPointsTo::unionRef(LivenessSet& Lin,
@@ -955,6 +960,15 @@ void LivenessPointsTo::runOnFunction(Function *F, const CallString &CS, Intrapro
                     // function and live at the beginning of it.
                     LivenessSet n = survivesCall;
                     insertReachable(Called, CI, n, calledFunctionLin, instruction_ain, Globals);
+                    // If the function's return value has the noalias attribute
+                    // and the noalias node is not a summary node, then it can
+                    // be killed here.
+                    if (CI->paramHasAttr(0, Attribute::NoAlias)) {
+                        PointsToNode *NoAliasNode = factory.getNoAliasNode(CI);
+                        if (!NoAliasNode->isSummaryNode(CS))
+                            n.erase(NoAliasNode);
+                    }
+
                     // If the two sets are the same, then no changes need to be
                     // made to lin, so don't do anything here. Otherwise, we
                     // need to update lin and add the predecessors of the
@@ -1025,9 +1039,16 @@ void LivenessPointsTo::runOnFunction(Function *F, const CallString &CS, Intrapro
                     // conservative for monotonicity.
                     n.insertAll(reachable);
                 }
-
                 // The return value is never live before the call.
                 n.erase(CINode);
+                // If the function's return value has the noalias attribute
+                // and the noalias node is not a summary node, then it can
+                // be killed here.
+                if (CI->paramHasAttr(0, Attribute::NoAlias)) {
+                    PointsToNode *NoAliasNode = factory.getNoAliasNode(CI);
+                    if (!NoAliasNode->isSummaryNode(CS))
+                        n.erase(NoAliasNode);
+                }
 
                 // If the two sets are the same, then no changes need to be made to lin,
                 // so don't do anything here. Otherwise, we need to update lin and add
