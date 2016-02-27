@@ -21,9 +21,7 @@ public:
     static unsigned worklistIterations, timesRanOnFunction;
 private:
     typedef SmallVector<PointsToNode *, 16> GlobalVector;
-    LivenessSet getRestrictedDef(Instruction *, PointsToRelation *, LivenessSet *);
-    void insertPointedToBy(std::set<PointsToNode *> &, Value *, PointsToRelation *);
-    std::set<PointsToNode *> getPointee(Instruction *, PointsToRelation *);
+    void insertNewPairs(PointsToRelation &, Instruction *, PointsToRelation *, LivenessSet *);
     void subtractKill(const CallString &CS, LivenessSet &, Instruction *, PointsToRelation *);
     void unionRef(LivenessSet &, Instruction *, LivenessSet *, PointsToRelation *);
     void computeLout(Instruction *, LivenessSet * , IntraproceduralPointsTo *, PointsToRelation *, bool, const GlobalVector &);

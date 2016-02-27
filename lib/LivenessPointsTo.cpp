@@ -20,11 +20,13 @@ unsigned LivenessPointsTo::timesRanOnFunction = 0;
 
 bool createdSummaryNode = false;
 
+typedef SmallVector<APInt, 8> IndexList;
+
 std::set<PointsToNode *> LivenessPointsTo::getPointsToSet(const Value *V, bool &AllowMustAlias) {
     if (const Instruction *I = dyn_cast<Instruction>(V)) {
         PointsToNode *N = factory.getNode(I);
         // If N is a summary node, the data may include pointees of fields.
-        if (N->isAlwaysSummaryNode())
+        if (N->isAlwaysSummaryNode() || !N->isFieldSensitive())
             AllowMustAlias = false;
         const BasicBlock *BB = I->getParent();
         const Function *F = BB->getParent();
@@ -73,26 +75,108 @@ std::set<PointsToNode *> LivenessPointsTo::getPointsToSet(const Value *V, bool &
     return std::set<PointsToNode *>();
 }
 
-void LivenessPointsTo::subtractKill(const CallString &CS,
-                                    LivenessSet &Lin,
-                                    Instruction *I,
-                                    PointsToRelation *Ain) {
-    PointsToNode *N = factory.getNode(I);
+std::pair<PointsToNode *, PointsToNode *> makePointsToPair(PointsToNode *Pointer, PointsToNode *Pointee) {
+    if (Pointer->pointeesAreSummaryNodes() && !Pointee->isAlwaysSummaryNode()) {
+        // If we turn the pointee into a summary node, this may affect what
+        // stores to the pointee do. However, these will be added to the
+        // worklist again.
+        createdSummaryNode = true;
+        Pointee->markAsSummaryNode();
+    }
 
-    // Note that we don't kill GEPs where they are defined; instead, we kill
-    // them where the parent is defined, so that their points-to information is
-    // preserved for longer.
-    if (!N->isSummaryNode(CS) && !isa<GetElementPtrInst>(I))
-        Lin.erase(N);
+    return {Pointer, Pointee};
+}
 
-    if (StoreInst *SI = dyn_cast<StoreInst>(I)) {
-        Value *Ptr = SI->getPointerOperand();
-        PointsToNode *PtrNode = factory.getNode(Ptr);
+bool isLive(PointsToNode *N, LivenessSet *L) {
+    return N->singlePointee() || !N->hasPointerType() || L->find(N) != L->end();
+}
 
+bool isDescendantLive(PointsToNode *N, LivenessSet *L) {
+    if (isLive(N, L))
+        return true;
+
+    if (N->isAggregate())
+        for (PointsToNode *C : N->children)
+            if (isDescendantLive(C, L))
+                return true;
+
+    return false;
+}
+
+void makeDescendantsAndPointeesLive(LivenessSet &Lin, PointsToNode *N, PointsToRelation *Ain) {
+    Lin.insert(N);
+    for (auto P = Ain->pointee_begin(N), E = Ain->pointee_end(N); P != E; ++P)
+        Lin.insert(*P);
+    for (auto *Child : N->children)
+        makeDescendantsAndPointeesLive(Lin, Child, Ain);
+}
+
+void addDescendants(SmallVector<std::pair<IndexList, PointsToNode *>, 8> &V, PointsToNode *N, IndexList &I) {
+    V.push_back({I, N});
+
+    for (auto *Child : N->children) {
+        assert(isa<GEPPointsToNode>(Child));
+        GEPPointsToNode *C = cast<GEPPointsToNode>(Child);
+        IndexList newList = I;
+        newList.append(C->indices.begin(), C->indices.end());
+        addDescendants(V, C, newList);
+    }
+}
+
+SmallVector<std::pair<IndexList, PointsToNode *>, 8> getDescendants(PointsToNode *N) {
+    SmallVector<std::pair<IndexList, PointsToNode *>, 8> result;
+    IndexList i;
+    addDescendants(result, N, i);
+    return result;
+}
+
+enum IndexListMatch { NoMatch, Shorter, Exact, Longer };
+
+IndexListMatch matchIndexLists(IndexList &A, IndexList &B) {
+    auto AI = A.begin(), AE = A.end();
+    auto BI = B.begin(), BE = B.end();
+    while (AI != AE && BI != BE) {
+        if (AI->getZExtValue() != BI->getZExtValue())
+            return NoMatch;
+        ++AI;
+        ++BI;
+    }
+
+    if (AI == AE && BI != BE)
+        return Shorter;
+    else if (AI != AE && BI == BE)
+        return Longer;
+    else {
+        assert(AI == AE && BI == BE);
+        return Exact;
+    }
+}
+
+bool prefixesMatch(IndexList &A, IndexList &B) {
+    auto AI = A.begin(), AE = A.end();
+    auto BI = B.begin(), BE = B.end();
+    while (AI != AE && BI != BE) {
+        if (AI->getZExtValue() != BI->getZExtValue())
+            return false;
+        ++AI;
+        ++BI;
+    }
+    return true;
+}
+
+void killDescendants(LivenessSet &Lin, PointsToNode *N) {
+    Lin.erase(N);
+
+    for (PointsToNode *C : N->children)
+        Lin.erase(C);
+}
+
+void subtractKillStoreInst(const CallString &CS, LivenessSet &Lin, PointsToNode *Ptr, PointsToRelation *Ain) {
+    if (!Ptr->isAggregate()) {
         bool strongUpdate = true;
         PointsToNode *PointedTo = nullptr;
 
-        for (auto P = Ain->pointee_begin(PtrNode), E = Ain->pointee_end(PtrNode); P != E; ++P) {
+        for (auto P = Ain->pointee_begin(Ptr), E = Ain->pointee_end(Ptr); P != E; ++P) {
             if ((*P)->isSummaryNode(CS) || PointedTo != nullptr) {
                 strongUpdate = false;
                 break;
@@ -102,7 +186,7 @@ void LivenessPointsTo::subtractKill(const CallString &CS,
         }
 
         if (strongUpdate) {
-            if (PointedTo == nullptr || PointedTo == factory.getUnknown()) {
+            if (PointedTo == nullptr || isa<UnknownPointsToNode>(PointedTo)) {
                 // We have no information about what Ptr can point to, so kill
                 // everything.
                 Lin.clear();
@@ -119,10 +203,197 @@ void LivenessPointsTo::subtractKill(const CallString &CS,
             // else.
         }
     }
+    else {
+        // If the node is an aggregate, we treat the store as a store to each of
+        // its children.
+        for (PointsToNode *N : Ptr->children)
+            subtractKillStoreInst(CS, Lin, N, Ain);
+    }
+}
+
+void LivenessPointsTo::subtractKill(const CallString &CS,
+                                    LivenessSet &Lin,
+                                    Instruction *I,
+                                    PointsToRelation *Ain) {
+    PointsToNode *N = factory.getNode(I);
+
+    // Note that we don't kill GEPs where they are defined; instead, we kill
+    // them where the parent is defined, so that their points-to information is
+    // preserved for longer.
+    if (!N->isSummaryNode(CS) && !isa<GetElementPtrInst>(I))
+        killDescendants(Lin, N);
+
+    if (StoreInst *SI = dyn_cast<StoreInst>(I)) {
+        Value *Ptr = SI->getPointerOperand();
+        PointsToNode *PtrNode = factory.getNode(Ptr);
+        subtractKillStoreInst(CS, Lin, PtrNode, Ain);
+    }
     else if (AllocaInst *AI = dyn_cast<AllocaInst>(I)) {
         PointsToNode *Alloca = factory.getNoAliasNode(AI);
         if (!Alloca->isSummaryNode(CS))
-            Lin.erase(Alloca);
+            killDescendants(Lin, Alloca);
+    }
+}
+
+void makeDescendantsLive(LivenessSet &Lin, PointsToNode *N) {
+    Lin.insert(N);
+
+    for (PointsToNode *D : N->children)
+        makeDescendantsLive(Lin, D);
+}
+
+bool isPointeeLive(PointsToNode *N, LivenessSet *Lout, PointsToRelation *Ain) {
+    for (auto P = Ain->pointee_begin(N), E = Ain->pointee_end(N); P != E; ++P)
+        if (isLive(*P, Lout))
+            return true;
+
+    return false;
+}
+
+bool isPointeeOfDescendantLive(PointsToNode *N, LivenessSet *Lout, PointsToRelation *Ain) {
+    if (isPointeeLive(N, Lout, Ain))
+        return true;
+
+    for (PointsToNode *C : N->children)
+        if (isPointeeOfDescendantLive(C, Lout, Ain))
+            return true;
+
+    return false;
+}
+
+PointsToNode *findDescendantExact(PointsToNode *N, IndexList &L) {
+    for (auto D : getDescendants(N))
+        if (matchIndexLists(D.first, L) == Exact)
+            return D.second;
+
+    return nullptr;
+}
+
+void makeChildren(PointsToNode *NoChildren, PointsToNode *SomeChildren) {
+    assert(NoChildren->isFieldSensitive());
+    assert(SomeChildren->isFieldSensitive());
+    for (auto D : getDescendants(SomeChildren)) {
+        if (D.first.empty())
+            continue;
+        assert(isa<GEPPointsToNode>(D.second));
+        GEPPointsToNode *N = cast<GEPPointsToNode>(D.second);
+        // FIXME: Do these nodes always have pointer type?
+        assert(N->NodeType->isPointerTy());
+        PointsToNode *Pointee = nullptr;
+        if (NoChildren->singlePointee()) {
+            Type *T = N->NodeType->getPointerElementType();
+            assert(T->isPointerTy());
+            Pointee = findDescendantExact(NoChildren->getSinglePointee(), D.first);
+            if (Pointee == nullptr)
+                Pointee = new GEPPointsToNode(NoChildren->getSinglePointee(), T->getPointerElementType(), D.first, nullptr);
+        }
+        // The constructor adds the node to the list of children.
+        new GEPPointsToNode(NoChildren, N->NodeType->getPointerElementType(), D.first, Pointee);
+    }
+}
+
+void makeChildrenPointer(PointsToNode *NoChildren, PointsToNode *SomeChildren) {
+    assert(NoChildren->isFieldSensitive());
+    assert(SomeChildren->isFieldSensitive());
+    for (auto D : getDescendants(SomeChildren)) {
+        if (D.first.empty())
+            continue;
+        assert(isa<GEPPointsToNode>(D.second));
+        GEPPointsToNode *N = cast<GEPPointsToNode>(D.second);
+        PointsToNode *Pointee = nullptr;
+        const Type *T = N->NodeType;
+        if (NoChildren->singlePointee()) {
+            Pointee = findDescendantExact(NoChildren->getSinglePointee(), D.first);
+            if (Pointee == nullptr)
+                Pointee = new GEPPointsToNode(NoChildren->getSinglePointee(), T, D.first, nullptr);
+        }
+        // The constructor adds the node to the list of children.
+        // I don't like the const cast here, but LLVM before version 3.8.0
+        // doesn't mark getPointerTo as const, so its needed.
+        new GEPPointsToNode(NoChildren, const_cast<Type*>(T)->getPointerTo(), D.first, Pointee);
+    }
+}
+
+void unionRefLoadInst(LivenessSet& Lin, PointsToNode *Ptr, PointsToNode *Load, LivenessSet *Lout, PointsToRelation *Ain) {
+    if (!Ptr->isAggregate() && isDescendantLive(Load, Lout)) {
+        Lin.insert(Ptr);
+        for (auto P = Ain->pointee_begin(Ptr), E = Ain->pointee_end(Ptr); P != E; ++P)
+            Lin.insert(*P);
+    }
+    else if (Ptr->isAggregate()) {
+        if (!Load->isAggregate()) {
+            if (!isa<GEPPointsToNode>(Load) && Load->isFieldSensitive()) {
+                // If a node is being treated field sensitively but is not an
+                // aggregate node, then (since Ptr here must be an aggregate
+                // node), it is because no children have been created for it. We
+                // create them here so that pointer information is correctly
+                // tracked.
+                makeChildren(Load, Ptr);
+                assert(Load->isAggregate());
+            }
+            else {
+                if (isLive(Load, Lout))
+                    makeDescendantsAndPointeesLive(Lin, Ptr, Ain);
+                return;
+            }
+        }
+
+        auto desc = getDescendants(Ptr);
+        for (auto D : getDescendants(Load))
+            if (isLive(D.second, Lout))
+                for (auto PtrD : desc)
+                    if (prefixesMatch(D.first, PtrD.first))
+                        makeDescendantsAndPointeesLive(Lin, PtrD.second, Ain);
+    }
+}
+
+void unionRefStoreInst(LivenessSet &Lin, PointsToNode *Ptr, PointsToNode *Value, LivenessSet *Lout, PointsToRelation *Ain) {
+    if (!Ptr->isAggregate() && !Value->isAggregate()) {
+        Lin.insert(Ptr);
+
+        // We only consider the stored value to be ref'd if at least one of the
+        // values that can be pointed to by Ptr is live.
+        if (isPointeeLive(Ptr, Lout, Ain))
+            makeDescendantsLive(Lin, Value);
+    }
+    else {
+        if (!Ptr->isAggregate()) {
+            if (!isa<GEPPointsToNode>(Ptr) && Ptr->isFieldSensitive()) {
+                // If a node is being treated field sensitively but is not an
+                // aggregate node, then (since Value here must be an aggregate
+                // node), it is because no children have been created for it. We
+                // create them here so that pointer information is correctly
+                // tracked.
+                makeChildrenPointer(Ptr, Value);
+                assert(Ptr->isAggregate());
+            }
+        }
+
+        makeDescendantsLive(Lin, Ptr);
+
+        if (!Value->isAggregate()) {
+            if (!isa<GEPPointsToNode>(Value) && Value->isFieldSensitive()) {
+                // If a node is being treated field sensitively but is not an
+                // aggregate node, then (since Ptr here must be an aggregate
+                // node), it is because no children have been created for it. We
+                // create them here so that pointer information is correctly
+                // tracked.
+                makeChildren(Value, Ptr);
+                assert(Value->isAggregate());
+            }
+            else {
+                if (isPointeeOfDescendantLive(Ptr, Lout, Ain))
+                    Lin.insert(Value);
+                return;
+            }
+        }
+
+        auto desc = getDescendants(Value);
+        for (auto D : getDescendants(Ptr))
+            if (isPointeeLive(D.second, Lout, Ain))
+                for (auto ValueD : desc)
+                    if (prefixesMatch(D.first, ValueD.first))
+                        makeDescendantsAndPointeesLive(Lin, ValueD.second, Ain);
     }
 }
 
@@ -133,36 +404,45 @@ void LivenessPointsTo::unionRef(LivenessSet& Lin,
     if (LoadInst *LI = dyn_cast<LoadInst>(I)) {
         // We only consider the pointer and the possible values in memory to be
         // ref'd if the load is live.
+        Value *Ptr = LI->getPointerOperand();
+        PointsToNode *PtrNode = factory.getNode(Ptr);
         PointsToNode *N = factory.getNode(I);
-        if (N->singlePointee() || !N->hasPointerType() || Lout->find(N) != Lout->end()) {
-            Value *Ptr = LI->getPointerOperand();
-            PointsToNode *PtrNode = factory.getNode(Ptr);
-            Lin.insert(PtrNode);
-            for (auto P = Ain->pointee_begin(PtrNode), E = Ain->pointee_end(PtrNode); P != E; ++P)
-                Lin.insert(*P);
-        }
+        unionRefLoadInst(Lin, PtrNode, N, Lout, Ain);
     }
     else if (StoreInst *SI = dyn_cast<StoreInst>(I)) {
         Value *Ptr = SI->getPointerOperand();
         PointsToNode *PtrNode = factory.getNode(Ptr);
-        Lin.insert(PtrNode);
-
-        // We only consider the stored value to be ref'd if at least one of the
-        // values that can be pointed to by x is live.
-        for (auto P = Ain->pointee_begin(PtrNode), E = Ain->pointee_end(PtrNode); P != E; ++P) {
-            if ((*P)->singlePointee() || !(*P)->hasPointerType() || Lout->find(*P) != Lout->end()) {
-                Lin.insert(factory.getNode(SI->getValueOperand()));
-                break;
-            }
-        }
+        PointsToNode *Value = factory.getNode(SI->getValueOperand());
+        unionRefStoreInst(Lin, PtrNode, Value, Lout, Ain);
     }
     else if (isa<PHINode>(I) || isa<SelectInst>(I)) {
         // We only consider the operands of a PHI node or select instruction to
         // be ref'd if I is live.
-        if (Lout->find(factory.getNode(I)) != Lout->end()) {
-            for (Use &U : I->operands())
-                if (Value *Operand = dyn_cast<Value>(U))
-                    Lin.insert(factory.getNode(Operand));
+        PointsToNode *N = factory.getNode(I);
+        if (!N->isAggregate()) {
+            if (isLive(N, Lout))
+                for (Use &U : I->operands())
+                    if (Value *Operand = dyn_cast<Value>(U))
+                        makeDescendantsLive(Lin, factory.getNode(Operand));
+        }
+        else {
+            if (isDescendantLive(N, Lout)) {
+                auto desc = getDescendants(N);
+                for (Use &U : I->operands()) {
+                    if (Value *Operand = dyn_cast<Value>(U)) {
+                        PointsToNode *OperandNode = factory.getNode(Operand);
+                        if (!OperandNode->isAggregate())
+                            Lin.insert(OperandNode);
+                        else {
+                            for (auto D : desc)
+                                if (isLive(D.second, Lout))
+                                    for (auto OpD : getDescendants(OperandNode))
+                                        if (prefixesMatch(D.first, OpD.first))
+                                            makeDescendantsLive(Lin, OpD.second);
+                        }
+                    }
+                }
+            }
         }
     }
     else {
@@ -170,175 +450,215 @@ void LivenessPointsTo::unionRef(LivenessSet& Lin,
         // operands to be ref'd, even if the instruction is not live.
         for (Use &U : I->operands())
             if (Value *Operand = dyn_cast<Value>(U))
-                Lin.insert(factory.getNode(Operand));
+                makeDescendantsLive(Lin, factory.getNode(Operand));
     }
 }
 
-LivenessSet LivenessPointsTo::getRestrictedDef(Instruction *I,
-                                               PointsToRelation *Ain,
-                                               LivenessSet *Lout) {
-    LivenessSet s;
-    if (StoreInst *SI = dyn_cast<StoreInst>(I)) {
-        Value *Ptr = SI->getPointerOperand();
-        PointsToNode *PtrNode = factory.getNode(Ptr);
+void unionDescendants(SmallVector<std::pair<IndexList, PointsToNode *>, 8> &S, const IndexList &L, PointsToNode *N) {
+    S.push_back({L, N});
 
-        for (auto P = Ain->pointee_begin(PtrNode), E = Ain->pointee_end(PtrNode); P != E; ++P)
-            if (Lout->find(*P) != Lout->end())
-                s.insert(*P);
+    for (auto *Child : N->children) {
+        assert(isa<GEPPointsToNode>(Child));
+        GEPPointsToNode *C = cast<GEPPointsToNode>(Child);
+        IndexList newList = L;
+        newList.append(C->indices.begin(), C->indices.end());
+        unionDescendants(S, newList, C);
+    }
+}
+
+void unionPointeesWithDescendants(SmallVector<std::pair<IndexList, PointsToNode *>, 8> &Pointees, PointsToRelation *Ain, const IndexList &L, PointsToNode *N) {
+    if (isa<UnknownPointsToNode>(N)) {
+        // Assume here that ?-->?.
+        Pointees.push_back({L, N});
+        return;
+    }
+
+    for (auto P = Ain->pointee_begin(N), E = Ain->pointee_end(N); P != E; ++P)
+        unionDescendants(Pointees, L, *P);
+
+    for (auto *Child : N->children) {
+        assert(isa<GEPPointsToNode>(Child));
+        GEPPointsToNode *C = cast<GEPPointsToNode>(Child);
+        IndexList newList = L;
+        newList.append(C->indices.begin(), C->indices.end());
+        unionPointeesWithDescendants(Pointees, Ain, newList, C);
+    }
+}
+
+void unionRelationApplicationWithDescendants(SmallVector<std::pair<IndexList, PointsToNode *>, 8> &Pointees, PointsToRelation *Ain, const SmallVector<std::pair<IndexList, PointsToNode *>, 8> &S) {
+    for (auto P : S)
+        unionPointeesWithDescendants(Pointees, Ain, P.first, P.second);
+}
+
+void insertNewPairsLoadInst(PointsToRelation &Aout, PointsToNode *Load, PointsToNode *Ptr, PointsToNode *Unknown, PointsToRelation *Ain, LivenessSet *Lout) {
+    if (!Load->isAggregate()) {
+        if (!isLive(Load, Lout))
+            return;
+
+        // If the pointer is an aggregate node, we don't know what the result of
+        // the load points to.
+        if (Ptr->isAggregate())
+            Aout.insert({Load, Unknown});
+        else {
+            std::set<PointsToNode *> t;
+            for (auto P = Ain->pointee_begin(Ptr), E = Ain->pointee_end(Ptr); P != E; ++P) {
+                if (isa<UnknownPointsToNode>(*P))
+                    Aout.insert({Load, Unknown});
+                t.insert(*P);
+            }
+            for (auto P = Ain->restriction_begin(t), E = Ain->restriction_end(t); P != E; ++P)
+                Aout.insert(makePointsToPair(Load, P->second));
+        }
     }
     else {
-        // Deal with cases where either the instruction itself is defined or
-        // nothing is.
-
-        PointsToNode *N = factory.getNode(I);
-        if (N->singlePointee()) {
-            // N will always point to the single pointee here, so there is no
-            // need to define it.
-        }
-        else {
-            switch (I->getOpcode()) {
-                case Instruction::GetElementPtr:
-                case Instruction::Load:
-                case Instruction::PHI:
-                case Instruction::Select:
-                    {
-                        if (Lout->find(N) != Lout->end())
-                            s.insert(N);
+        SmallVector<std::pair<IndexList, PointsToNode *>, 8> p, pointees;
+        IndexList l;
+        unionPointeesWithDescendants(pointees, Ain, l, Ptr);
+        unionRelationApplicationWithDescendants(p, Ain, pointees);
+        for (auto D : getDescendants(Load)) {
+            if (isLive(D.second, Lout)) {
+                for (auto P : p) {
+                    switch (matchIndexLists(D.first, P.first)) {
+                        case Exact:
+                            if (!D.second->isAggregate() || !P.second->isAggregate())
+                                Aout.insert(makePointsToPair(D.second, P.second));
+                            break;
+                        case Longer:
+                            // If D.second is an aggregate points to pairs will
+                            // be added for its children.
+                            if (!D.second->isAggregate())
+                                Aout.insert({D.second, Unknown});
+                            break;
+                        case Shorter:
+                        case NoMatch:
+                            break;
                     }
-                    break;
-                default:
-                    break;
+                }
             }
         }
     }
-    return s;
 }
 
-void LivenessPointsTo::insertPointedToBy(std::set<PointsToNode *> &S,
-                                         Value *V,
-                                         PointsToRelation *Ain) {
-    PointsToNode *VNode = factory.getNode(V);
-    for (auto P = Ain->pointee_begin(VNode), E = Ain->pointee_end(VNode); P != E; ++P)
-        S.insert(*P);
-}
-
-bool pointsToUnknown(PointsToNode *N, PointsToRelation *R) {
-    auto Pred = [&](PointsToNode *N) {
-        return isa<UnknownPointsToNode>(N);
-    };
-    auto E = R->pointee_end(N);
-    return std::find_if(R->pointee_begin(N), E, Pred) != E;
-}
-
-std::set<PointsToNode *> LivenessPointsTo::getPointee(Instruction *I, PointsToRelation *Ain) {
-    std::set<PointsToNode *> s;
-    if (LoadInst *LI = dyn_cast<LoadInst>(I)) {
-        Value *Ptr = LI->getPointerOperand();
-        PointsToNode *PtrNode = factory.getNode(Ptr);
-        std::set<PointsToNode *> t;
-        for (auto P = Ain->pointee_begin(PtrNode), E = Ain->pointee_end(PtrNode); P != E; ++P) {
-            if (isa<UnknownPointsToNode>(*P))
-                s.insert(*P);
-            t.insert(*P);
+void insertNewPairsStoreInst(PointsToRelation &Aout, PointsToNode *Ptr, PointsToNode *Value, PointsToNode *Unknown, PointsToRelation *Ain, LivenessSet *Lout) {
+    if (!Ptr->isAggregate() && !Value->isAggregate()) {
+        for (auto P = Ain->pointee_begin(Ptr), PE = Ain->pointee_end(Ptr); P != PE; ++P)
+            if (Lout->find(*P) != Lout->end())
+                for (auto Q = Ain->pointee_begin(Value), QE = Ain->pointee_end(Value); Q != QE; ++Q)
+                    Aout.insert(makePointsToPair(*P, *Q));
+    }
+    else {
+        SmallVector<std::pair<IndexList, PointsToNode *>, 8> ptrPointees, valuePointees;
+        IndexList l;
+        unionPointeesWithDescendants(ptrPointees, Ain, l, Ptr);
+        unionPointeesWithDescendants(valuePointees, Ain, l, Value);
+        for (auto P : ptrPointees) {
+            if (Lout->find(P.second) != Lout->end()) {
+                for (auto Q : valuePointees) {
+                    switch (matchIndexLists(P.first, Q.first)) {
+                        case Exact:
+                            if (!P.second->isAggregate() || !Q.second->isAggregate())
+                                Aout.insert(makePointsToPair(P.second, Q.second));
+                            break;
+                        case Longer:
+                            if (!Q.second->isAggregate())
+                                Aout.insert({P.second, Unknown});
+                            break;
+                        case Shorter:
+                        case NoMatch:
+                            break;
+                    }
+                }
+            }
         }
-        for (auto P = Ain->restriction_begin(t), E = Ain->restriction_end(t); P != E; ++P)
-            s.insert(P->second);
+    }
+}
+
+void insertNewPairsAssignment(PointsToRelation &Aout, PointsToNode *L, PointsToNode *R, PointsToNode *Unknown, PointsToRelation *Ain, LivenessSet *Lout) {
+    if (!L->isAggregate() && !R->isAggregate()) {
+        if (Lout->find(L) == Lout->end())
+            return;
+
+        for (auto P = Ain->pointee_begin(R), E = Ain->pointee_end(R); P != E; ++P)
+            Aout.insert(makePointsToPair(L, *P));
+    }
+    else {
+        SmallVector<std::pair<IndexList, PointsToNode *>, 8> pointees;
+        IndexList l;
+        unionPointeesWithDescendants(pointees, Ain, l, R);
+        for (auto D : getDescendants(L)) {
+            if (Lout->find(D.second) != Lout->end()) {
+                for (auto P : pointees) {
+                    switch (matchIndexLists(D.first, P.first)) {
+                        case Exact:
+                            if (!D.second->isAggregate() || !P.second->isAggregate())
+                                Aout.insert(makePointsToPair(D.second, P.second));
+                            break;
+                        case Longer:
+                            if (!P.second->isAggregate())
+                                Aout.insert({D.second, Unknown});
+                            break;
+                        case Shorter:
+                        case NoMatch:
+                            break;
+                    }
+                }
+            }
+        }
+    }
+}
+
+void LivenessPointsTo::insertNewPairs(PointsToRelation &Aout, Instruction *I, PointsToRelation *Ain, LivenessSet *Lout) {
+    PointsToNode *Unknown = factory.getUnknown();
+    if (LoadInst *LI = dyn_cast<LoadInst>(I)) {
+        PointsToNode *Load = factory.getNode(LI);
+        PointsToNode *Pointer = factory.getNode(LI->getPointerOperand());
+        insertNewPairsLoadInst(Aout, Load, Pointer, Unknown, Ain, Lout);
     }
     else if (StoreInst *SI = dyn_cast<StoreInst>(I)) {
-        Value *V = SI->getValueOperand();
-        insertPointedToBy(s, V, Ain);
-    }
-    else if (AllocaInst *AI = dyn_cast<AllocaInst>(I)) {
-        // If the instruction is an alloca, then we consider the pointer to be
-        // to a special location which does not correspond to any Value and is
-        // disjoint from all other locations.
-        s.insert(factory.getNoAliasNode(AI));
-    }
-    else if (PHINode *Phi = dyn_cast<PHINode>(I)) {
-        // The result of the phi can point to anything that an operand of the
-        // phi can point to.
-        for (auto &V : Phi->incoming_values())
-            insertPointedToBy(s, V, Ain);
+        PointsToNode *Ptr = factory.getNode(SI->getPointerOperand());
+        PointsToNode *Value = factory.getNode(SI->getValueOperand());
+        insertNewPairsStoreInst(Aout, Ptr, Value, Unknown, Ain, Lout);
     }
     else if (SelectInst *SI = dyn_cast<SelectInst>(I)) {
-        // The result of the select can point to anything that one of the
-        // selected values can point to.
-        insertPointedToBy(s, SI->getTrueValue(), Ain);
-        insertPointedToBy(s, SI->getFalseValue(), Ain);
+        PointsToNode *Select = factory.getNode(SI);
+        insertNewPairsAssignment(Aout, Select, factory.getNode(SI->getFalseValue()), Unknown, Ain, Lout);
+        insertNewPairsAssignment(Aout, Select, factory.getNode(SI->getTrueValue()), Unknown, Ain, Lout);
+    }
+    else if (PHINode *Phi = dyn_cast<PHINode>(I)) {
+        PointsToNode *N = factory.getNode(Phi);
+        for (auto &V : Phi->incoming_values())
+            insertNewPairsAssignment(Aout, N, factory.getNode(V), Unknown, Ain, Lout);
     }
     else if (GEPOperator *GEP = dyn_cast<GEPOperator>(I)) {
-        PointsToNode *GEPNode = factory.getNode(GEP);
-        if (GEPNode->isFieldSensitive()) {
-            auto Index = GEP->idx_begin(), E = GEP->idx_end();
-            assert(Index != E && "A getelementptr instruction must have at least one index.");
-            (void)E;
-            if (cast<ConstantInt>(Index)->isZero()) {
-                PointsToNode *PointerOperandNode = factory.getNode(GEP->getPointerOperand());
-                if (PointerOperandNode->singlePointee()) {
-                    // If we treat this GEP field-sensitively, and if the
-                    // pointer that it is based on points only to a constant
-                    // node, and the first index is 0 (i.e. the field is inside
-                    // the node), then we use a GEP based on the node for the
-                    // pointee.
-                    s.insert(factory.getIndexedNode(PointerOperandNode->getSinglePointee(), GEP));
-                    return s;
-                }
-
-                PointsToNode *Pointee = nullptr;
-                for (auto I = Ain->pointee_begin(PointerOperandNode), E = Ain->pointee_end(PointerOperandNode); I != E; ++I) {
-                    if (isa<UnknownPointsToNode>(*I)) {
-                        // If we treat this GEP field-sensitively, and if we don't
-                        // know what the pointer that the GEP is based on points to,
-                        // then we don't know what the result of the GEP points to.
-                        s.insert(factory.getUnknown());
-                        return s;
-                    }
-                    else if (Pointee == nullptr)
-                        Pointee = *I;
-                    else
-                        break;
-                }
-
-                if (Pointee != nullptr) {
-                    // If we treat this GEP field-sensitively, and if the
-                    // pointer that it is based on points only to Pointee node,
-                    // and the first index is 0 (i.e. the field is inside
-                    // Pointee), then we use a GEP based on Pointee for the
-                    // pointee.
-                    s.insert(factory.getIndexedNode(Pointee, GEP));
-                    return s;
-                }
-            }
-        }
-        else {
-            // If the GEP has a non-constant index, then the node used to
-            // represent it is the same as that used to represent the pointer
-            // that is indexed. We therefore don't have to add any pointees
+        PointsToNode *N = factory.getNode(GEP);
+        PointsToNode *Ptr = factory.getNode(GEP->getPointerOperand());
+        if (N->singlePointee()) {
+            // The points to pair for N is implicit, so nothing needs to be added
             // here.
+            return;
+        }
+
+        if (N->pointeesAreSummaryNodes() || !N->isFieldSensitive()) {
+            // The value being indexed is treated insensitively, so we don't need to
+            // do anything to Aout here.
+            return;
+        }
+
+        if (Lout->find(N) == Lout->end())
+            return;
+
+        assert(GEP->hasAllConstantIndices());
+
+        for (auto P = Ain->pointee_begin(Ptr), E = Ain->pointee_end(Ptr); P != E; ++P) {
+            if (isa<UnknownPointsToNode>(*P) || !(*P)->isFieldSensitive()) {
+                // We don't know what the pointer points to or we don't treat the pointee field sensitively, so we don't know what
+                // the GEP points to.
+                Aout.insert({N, Unknown});
+            }
+            else
+                Aout.insert({N, factory.getIndexedNode(*P, GEP)});
         }
     }
-
-    return s;
-}
-
-std::pair<PointsToNode *, PointsToNode *> makePointsToPair(PointsToNode *Pointer, PointsToNode *Pointee) {
-    if (Pointer->pointeesAreSummaryNodes() && !Pointee->isAlwaysSummaryNode()) {
-        // If we turn the pointee into a summary node, this may affect what
-        // stores to the pointee do. However, these will be added to the
-        // worklist again.
-        createdSummaryNode = true;
-        Pointee->markAsSummaryNode();
-    }
-
-    return std::make_pair(Pointer, Pointee);
-}
-
-void unionCartesianProduct(PointsToRelation &Result,
-                                         LivenessSet &A,
-                                         std::set<PointsToNode *> &B) {
-    for (auto &X : A)
-        for (auto &Y : B)
-            Result.insert(makePointsToPair(X, Y));
 }
 
 ProcedurePointsTo *LivenessPointsTo::getPointsTo(Function &F) const {
@@ -1115,14 +1435,7 @@ void LivenessPointsTo::runOnFunction(Function *F, const CallString &CS, Intrapro
             LivenessSet notKilled = *instruction_lout;
             subtractKill(CS, notKilled, I, instruction_ain);
             s.unionRelationRestriction(instruction_ain, &notKilled);
-            LivenessSet def =
-                getRestrictedDef(I, instruction_ain, instruction_lout);
-            // There is no need to call getPointee if def is empty because the
-            // cartesian product will be empty anyway.
-            if (!def.empty()) {
-                std::set<PointsToNode *> pointee = getPointee(I, instruction_ain);
-                unionCartesianProduct(s, def, pointee);
-            }
+            insertNewPairs(s, I, instruction_ain, instruction_lout);
             if (s != *instruction_aout) {
                 instruction_aout->clear();
                 instruction_aout->insertAll(s);

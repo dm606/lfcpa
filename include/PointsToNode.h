@@ -14,7 +14,11 @@
 
 #include "CallString.h"
 
+#define MAX_DESCENDANT_LEVEL 50000
+
 using namespace llvm;
+
+class GEPPointsToNode;
 
 class PointsToNode {
 public:
@@ -33,13 +37,13 @@ public:
 private:
     const PointsToNodeKind Kind;
 protected:
-    SmallVector<PointsToNode *, 4> children;
     StringRef name;
     static int nextId;
     bool summaryNode = false, escapingNode = false, summaryNodePointees = false, fieldSensitive = true;
 
     PointsToNode(PointsToNodeKind K) : Kind(K) {}
 public:
+    SmallVector<PointsToNode *, 4> children;
     PointsToNodeKind getKind() const { return Kind; }
 
     virtual bool hasPointerType() const { return false; }
@@ -82,6 +86,9 @@ public:
     }
     inline StringRef getName() const {
         return name;
+    }
+    inline bool isAggregate() const {
+        return fieldSensitive && !children.empty();
     }
     inline bool isSubNodeOf(PointsToNode *N) {
         if (this == N)
@@ -255,13 +262,53 @@ class NoAliasPointsToNode : public PointsToNode {
 class GEPPointsToNode : public PointsToNode {
     private:
         const PointsToNode *Parent;
+        int level;
         bool pointerType;
-        SmallVector<APInt, 8> indices;
         std::string stdName;
         PointsToNode *Pointee;
         friend class PointsToNodeFactory;
+        friend class PointsToNode;
     public:
-        GEPPointsToNode(PointsToNode *Parent, const Type *Type, User::const_op_iterator I, User::const_op_iterator E, PointsToNode *Pointee) : PointsToNode(PTNK_GEP), Parent(Parent), Pointee(Pointee) {
+        const Type *NodeType;
+        SmallVector<APInt, 8> indices;
+        GEPPointsToNode(PointsToNode *Parent, const Type *Type, SmallVector<APInt, 8> indices, PointsToNode *Pointee) : PointsToNode(PTNK_GEP), Parent(Parent), Pointee(Pointee), NodeType(Type), indices(indices) {
+            assert(!indices.empty());
+            assert(isa<GEPPointsToNode>(Parent) || indices.begin()->getZExtValue() == 0);
+            pointerType = Type->isPointerTy();
+
+            std::stringstream ns;
+            ns << Parent->getName().str();
+            for (auto I : indices) {
+                ns << "[";
+                ns << I.getZExtValue();
+                ns << "]";
+            }
+            Parent->children.push_back(this);
+            stdName = ns.str();
+            name = StringRef(stdName);
+
+            if (GEPPointsToNode *P = dyn_cast<GEPPointsToNode>(Parent))
+                level = P->level + indices.size();
+            else
+                level = 0;
+
+            // Nested data structures could potentially result in the creation
+            // of nodes at an arbitrarily large depth (in terms of the tree of
+            // descendants of a node). Hence we limit the depth here to ensure
+            // termination.
+            if (level > MAX_DESCENDANT_LEVEL) {
+                markNotFieldSensitive();
+                if (pointerType)
+                    markPointeesAreSummaryNodes();
+            }
+
+            assert(Pointee == nullptr || Parent->singlePointee());
+            assert(Parent->isFieldSensitive());
+        }
+        GEPPointsToNode(PointsToNode *Parent, const Type *Type, User::const_op_iterator I, User::const_op_iterator E, PointsToNode *Pointee) : PointsToNode(PTNK_GEP), Parent(Parent), Pointee(Pointee), NodeType(Type) {
+            assert(I != E);
+            assert(isa<ConstantInt>(I) && "Can only treat GEPs with constant indices field-sensitively.");
+            assert(isa<GEPPointsToNode>(Parent) || cast<ConstantInt>(I)->isZero());
             pointerType = Type->isPointerTy();
 
             std::stringstream ns;
@@ -278,7 +325,23 @@ class GEPPointsToNode : public PointsToNode {
             stdName = ns.str();
             name = StringRef(stdName);
 
+            if (GEPPointsToNode *P = dyn_cast<GEPPointsToNode>(Parent))
+                level = P->level + indices.size();
+            else
+                level = 0;
+
+            // Nested data structures could potentially result in the creation
+            // of nodes at an arbitrarily large depth (in terms of the tree of
+            // descendants of a node). Hence we limit the depth here to ensure
+            // termination.
+            if (level > MAX_DESCENDANT_LEVEL) {
+                markNotFieldSensitive();
+                if (pointerType)
+                    markPointeesAreSummaryNodes();
+            }
+
             assert(Pointee == nullptr || Parent->singlePointee());
+            assert(Parent->isFieldSensitive());
         }
 
         GEPPointsToNode(PointsToNode *Parent, const Type *Type, const GEPOperator *V, PointsToNode *Pointee) : GEPPointsToNode(Parent, Type, V->idx_begin(), V->idx_end(), Pointee) { }
