@@ -1033,10 +1033,21 @@ void LivenessPointsTo::runOnFunction(Function *F, const CallString &CS, Intrapro
         }
     }
 
-    // Create and initialize worklist.
+    // Create and initialize worklist. Also initialize the values of Lout and
+    // Ain, since they are not preserved across calls.
     SmallPtrSet<Instruction *, 128> worklist;
-    for (inst_iterator I = inst_begin(F), E = inst_end(F); I != E; I++)
+    for (inst_iterator I = inst_begin(F), E = inst_end(F); I != E; I++) {
         worklist.insert(&*I);
+        auto instruction_nonresult = nonresult.find(&*I), instruction_result = Result->find(&*I);
+        assert (instruction_nonresult != nonresult.end());
+        assert (instruction_result != Result->end());
+        auto instruction_ain = instruction_nonresult->second.second,
+             instruction_aout = instruction_result->second.second;
+        auto instruction_lin = instruction_result->second.first,
+             instruction_lout = instruction_nonresult->second.first;
+        computeLout(&*I, instruction_lout, Result, instruction_aout, ExitLiveness == nullptr, Globals);
+        computeAin(&*I, F, instruction_ain, instruction_lin, Result, EntryPointsTo == nullptr);
+    }
 
     // Update points-to and liveness information until it converges.
     while (!worklist.empty()) {
@@ -1058,10 +1069,6 @@ void LivenessPointsTo::runOnFunction(Function *F, const CallString &CS, Intrapro
              addSuccsToWorklist = false,
              addCurrToWorklist = false;
 
-        // At the beginning of this function, Lout and Ain are initialized to
-        // empty for each instruction, which (temporarily) breaks monotonicity.
-        // To ensure that previous values are recovered immediately, compute
-        // these first.
         computeLout(I, instruction_lout, Result, instruction_aout, ExitLiveness == nullptr, Globals);
         addCurrToWorklist |= computeAin(I, F, instruction_ain, instruction_lin, Result, EntryPointsTo == nullptr);
 
