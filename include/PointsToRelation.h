@@ -252,6 +252,14 @@ public:
         return const_restriction_iterator(s.end(), s.end(), S->begin(), S->end());
     }
 
+    inline const_iterator begin() {
+        return s.begin();
+    }
+
+    inline const_iterator end() {
+        return s.end();
+    }
+
     inline bool empty() const {
         return s.empty();
     }

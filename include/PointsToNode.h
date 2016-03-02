@@ -173,8 +173,8 @@ class UnknownPointsToNode : public PointsToNode {
 class ValuePointsToNode : public PointsToNode {
     private:
         std::string stdName;
-        const Value *V;
         bool isPointer, userOrArg;
+        const Value *V;
         PointsToNode *Pointee;
     public:
         ValuePointsToNode(const Value *V, PointsToNode *Pointee) : PointsToNode(PTNK_Value), V(V), Pointee(Pointee) {
@@ -225,8 +225,8 @@ class NoAliasPointsToNode : public PointsToNode {
     private:
         std::string stdName;
         bool isPointer;
-        const Function *Definer;
     public:
+        const Function *Definer;
         NoAliasPointsToNode(const AllocaInst *AI) : PointsToNode(PTNK_NoAlias), Definer(AI->getParent()->getParent()) {
            stdName = "alloca:" + AI->getName().str();
            name = StringRef(stdName);

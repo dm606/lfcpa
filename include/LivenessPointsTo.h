@@ -26,13 +26,13 @@ private:
     void unionRef(LivenessSet &, Instruction *, LivenessSet *, PointsToRelation *);
     void computeLout(Instruction *, LivenessSet * , IntraproceduralPointsTo *, PointsToRelation *, bool, const GlobalVector &);
     bool computeAin(Instruction *, Function *, PointsToRelation *, LivenessSet *, IntraproceduralPointsTo *, bool InsertAtFirstInstruction);
-    LivenessSet *getReachable(Function *, CallInst *, PointsToRelation *, LivenessSet *, GlobalVector &);
-    PointsToRelation *getReachablePT(const CallString &, Function *, CallInst *, PointsToRelation *, GlobalVector &, YesNoMaybe &);
-    void insertReachable(Function *, CallInst *, LivenessSet &, LivenessSet &, PointsToRelation *, GlobalVector &);
     void insertReachableDeclaration(const CallString &, CallInst *, LivenessSet &, LivenessSet &, PointsToRelation *, YesNoMaybe &);
-    void insertReachablePT(CallInst *, PointsToRelation &, PointsToRelation &, PointsToRelation *, LivenessSet &, std::set<PointsToNode *>&, GlobalVector &);
     bool getCalledFunctionResult(const CallString &, Function *, std::pair<LivenessSet, PointsToRelation>&);
     std::set<PointsToNode *> getReturnValues(const Function *);
+    LivenessSet *removeActualArguments(CallInst *, LivenessSet *, std::set<PointsToNode *> &, SmallVector<PointsToNode *, 8> &);
+    PointsToRelation *replaceActualArgumentsWithFormal(Function *, CallInst *, PointsToRelation *);
+    LivenessSet replaceFormalArgumentsWithActual(const CallString &CS, Function *, CallInst *, LivenessSet &, SmallVector<PointsToNode *, 8> &);
+    PointsToRelation replaceReturnValuesWithCallInst(CallInst *, PointsToRelation &, std::set<PointsToNode *> &, LivenessSet *);
     void runOnFunction(Function *, const CallString &, IntraproceduralPointsTo *, PointsToRelation *, LivenessSet *, SmallVector<std::tuple<CallInst *, Function *, PointsToRelation *, LivenessSet *>, 8> &);
     bool runOnFunctionAt(const CallString &, Function *, PointsToRelation *, LivenessSet *);
     void addNotInvalidatedRestricted(PointsToRelation &, PointsToRelation *, CallInst *, LivenessSet *);

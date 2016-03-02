@@ -778,196 +778,6 @@ bool LivenessPointsTo::computeAin(Instruction *I, Function *F, PointsToRelation 
     return false;
 }
 
-LivenessSet *LivenessPointsTo::getReachable(Function *Callee, CallInst *CI, PointsToRelation *Aout, LivenessSet *Lout, GlobalVector &Globals) {
-    // This is roughly the mark phase from mark-and-sweep garbage collection. We
-    // begin with the roots, which are the arguments of the function, return
-    // values and global variables, then determine what is reachable using the
-    // points-to relation.
-    LivenessSet reachable;
-    std::set<PointsToNode *> seen;
-    PointsToNode *CallNode = factory.getNode(CI);
-    bool isCallInstLive = !CallNode->hasPointerType() || Lout->find(CallNode) != Lout->end();
-
-    std::function<void(PointsToNode *)> insertReachable = [&](PointsToNode *N) {
-        if (seen.insert(N).second) {
-            reachable.insert(N);
-            for (auto P = Aout->pointee_begin(N), E = Aout->pointee_end(N); P != E; ++P) {
-                insertReachable(*P);
-                // If an alloca or noalias node can be killed by a child, then
-                // it needs to be marked as a summary node because we conflate
-                // the different frames on the call stack. This is imprecise,
-                // but safe.
-                if ((*P)->basedOnNoAlias() && !(*P)->isEscaping()) {
-                    (*P)->markAsEscaping();
-                    createdSummaryNode = true;
-                }
-                for (auto *Child : (*P)->children) {
-                    if (Child->basedOnNoAlias() && !Child->isEscaping()) {
-                        Child->markAsEscaping();
-                        createdSummaryNode = true;
-                    }
-                }
-            }
-
-            // If a node is reachable, then so are its subnodes.
-            for (auto *Child : N->children)
-                insertReachable(Child);
-        }
-    };
-    LivenessSet *L = new LivenessSet();
-
-    // We need to add formal arguments to the result. Only add things that the
-    // actual arguments can point to reachable, and add formal arguments to L
-    // immediately.
-    auto Arg = Callee->arg_begin();
-    for (Value *V : CI->arg_operands()) {
-        PointsToNode *N = factory.getNode(V);
-        // FIXME: What about varargs functions?
-        assert(Arg != Callee->arg_end() && "Argument count mismatch");
-        Argument *A = &*Arg;
-        PointsToNode *ANode = factory.getNode(A);
-        for (auto P = Aout->pointee_begin(N), E = Aout->pointee_end(N); P != E; ++P) {
-            // If an alloca or noalias node can be killed by a child, then
-            // it needs to be marked as a summary node because we conflate
-            // the different frames on the call stack. This is imprecise,
-            // but safe.
-            if ((*P)->basedOnNoAlias() && !(*P)->isEscaping()) {
-                (*P)->markAsEscaping();
-                createdSummaryNode = true;
-            }
-            insertReachable(*P);
-        }
-        if (N->singlePointee() || Lout->find(N) != Lout->end())
-            L->insert(ANode);
-        ++Arg;
-    }
-
-    // Return values
-    if (isCallInstLive)
-        for (PointsToNode *N : getReturnValues(Callee))
-            insertReachable(N);
-
-    // Then add the global variables
-    for (auto N : Globals)
-        insertReachable(N);
-    for (auto N : *Lout)
-        if (reachable.find(N) != reachable.end())
-            L->insert(N);
-
-    return L;
-}
-
-PointsToRelation * LivenessPointsTo::getReachablePT(const CallString &CS, Function *Callee, CallInst *CI, PointsToRelation *Ain, GlobalVector &Globals, YesNoMaybe &EverythingReachable) {
-    // This is roughly the mark phase from mark-and-sweep garbage collection. We
-    // begin with the roots, which are the arguments of the function and global
-    // variables, then determine what is reachable using the points-to relation.
-    LivenessSet reachable;
-    std::set<PointsToNode *> seen;
-
-    std::function<void(PointsToNode *)> insertReachable = [&](PointsToNode *N) {
-        if (isa<UnknownPointsToNode>(N)) {
-            // If ? is reachable, then everything is reachable.
-            EverythingReachable = Yes;
-            return;
-        }
-        if (seen.insert(N).second) {
-            reachable.insert(N);
-            bool noPointees = true;
-            for (auto P = Ain->pointee_begin(N), E = Ain->pointee_end(N); P != E; ++P) {
-                insertReachable(*P);
-                noPointees = false;
-            }
-
-            if (noPointees && (N->hasPointerType() || N->isSummaryNode(CS)) && EverythingReachable == No) {
-                assert(!N->singlePointee());
-                EverythingReachable = Maybe;
-            }
-
-            // If a node is reachable, then so are its subnodes.
-            for (auto *Child : N->children)
-                insertReachable(Child);
-        }
-    };
-
-    PointsToRelation *PT = new PointsToRelation();
-
-    // We need to add formal arguments to the result, or only add things that
-    // the actual arguments can point to to reachable, and add formal arguments
-    // immediately.
-    auto Arg = Callee->arg_begin();
-    for (Value *V : CI->arg_operands()) {
-        PointsToNode *N = factory.getNode(V);
-        // FIXME: What about varargs functions?
-        assert(Arg != Callee->arg_end() && "Argument count mismatch");
-        Argument *A = &*Arg;
-        PointsToNode *ANode = factory.getNode(A);
-        bool noPointees = true;
-        for (auto P = Ain->pointee_begin(N), E = Ain->pointee_end(N); P != E; ++P) {
-            insertReachable(*P);
-            noPointees = false;
-            PT->insert(makePointsToPair(ANode, *P));
-        }
-        if (noPointees && (N->hasPointerType() || N->isSummaryNode(CS)) && EverythingReachable == No) {
-            assert(!N->singlePointee());
-            EverythingReachable = Maybe;
-        }
-        ++Arg;
-    }
-
-    // Then add the global variables.
-    for (auto N : Globals)
-        insertReachable(N);
-    for (auto P = Ain->restriction_begin(reachable), E = Ain->restriction_end(reachable); P != E; ++P)
-        PT->insert(*P);
-
-    return PT;
-}
-
-void LivenessPointsTo::insertReachable(Function *Callee, CallInst *CI, LivenessSet &N, LivenessSet &Lin, PointsToRelation *Ain, GlobalVector &Globals) {
-    // This is roughly the mark phase from mark-and-sweep garbage collection. We
-    // begin with the roots, which are the arguments of the function and global
-    // variables, then determine what is reachable using the points-to relation.
-    LivenessSet reachable;
-    std::set<PointsToNode *> seen;
-
-    std::function<void(PointsToNode *)> insertReachable = [&](PointsToNode *N) {
-        if (seen.insert(N).second) {
-            reachable.insert(N);
-            for (auto P = Ain->pointee_begin(N), E = Ain->pointee_end(N); P != E; ++P)
-                insertReachable(*P);
-
-            // If a node is reachable, then so are its subnodes.
-            for (auto *Child : N->children)
-                insertReachable(Child);
-        }
-    };
-
-    // If there is a formal argument that is live at the beginning of the
-    // callee, the corresponding actual argument is live before the call
-    // instruction.
-    auto Arg = Callee->arg_begin();
-    for (Value *V : CI->arg_operands()) {
-        PointsToNode *Node = factory.getNode(V);
-        // FIXME: What about varargs functions?
-        assert(Arg != Callee->arg_end() && "Argument count mismatch");
-        Argument *A = &*Arg;
-        PointsToNode *ANode = factory.getNode(A);
-        if (Lin.find(ANode) != Lin.end())
-            N.insert(Node);
-        for (auto P = Ain->pointee_begin(Node), E = Ain->pointee_end(Node); P != E; ++P)
-            insertReachable(*P);
-        ++Arg;
-    }
-    // Then add the global variables.
-    for (auto N : Globals)
-        insertReachable(N);
-
-    // We now determine which live variables are relevant.
-    for (auto Node : Lin)
-        if (reachable.find(Node) != reachable.end())
-            N.insert(Node);
-}
-
 void LivenessPointsTo::insertReachableDeclaration(const CallString &CS, CallInst *CI, LivenessSet &Reachable, LivenessSet &Killable, PointsToRelation *Ain, YesNoMaybe &EverythingReachable) {
     std::set<PointsToNode *> seen;
     // FIXME: Can globals be accessed by the function?
@@ -1004,75 +814,6 @@ void LivenessPointsTo::insertReachableDeclaration(const CallString &CS, CallInst
     // Arguments are roots.
     for (Value *V : CI->arg_operands())
         insertReachable(factory.getNode(V));
-}
-
-void LivenessPointsTo::insertReachablePT(CallInst *CI, PointsToRelation &N, PointsToRelation &Aout, PointsToRelation *Ain, LivenessSet &Lout, std::set<PointsToNode *> &ReturnValues, GlobalVector &Globals) {
-    LivenessSet reachable;
-    std::set<PointsToNode *> seen;
-
-    std::function<void(PointsToNode *)> insertReachable = [&](PointsToNode *N) {
-        if (seen.insert(N).second) {
-            if (Lout.find(N) != Lout.end())
-                reachable.insert(N);
-
-            for (auto P = Ain->pointee_begin(N), E = Ain->pointee_end(N); P != E; ++P)
-                insertReachable(*P);
-
-            // If a node is reachable, then so are its subnodes.
-            for (auto *Child : N->children)
-                insertReachable(Child);
-        }
-    };
-
-    // We want the result of the call to point to anything that a return value
-    // can point to. However, if there is a return value that we don't know what
-    // points to, then we don't know anything about what the result can point
-    // to. If there is a return value that does not have a pointee (there are no
-    // pairs with it as a first element), we treat it as having a known but not
-    // yet discovered pointee.
-    bool pointToUnknown = false;
-    for (PointsToNode *V : ReturnValues) {
-        for (auto P = Ain->pointee_begin(V), E = Ain->pointee_end(V); P != E; ++P) {
-            if (*P == factory.getUnknown()) {
-                pointToUnknown = true;
-                break;
-            }
-        }
-
-        if (pointToUnknown)
-            break;
-    }
-
-    PointsToNode *CINode = factory.getNode(CI);
-    if (Lout.find(CINode) != Lout.end()) {
-        if (pointToUnknown)
-            N.insert(std::make_pair(CINode, factory.getUnknown()));
-        else
-            for (auto P = Aout.restriction_begin(ReturnValues), E = Aout.restriction_end(ReturnValues); P != E; ++P)
-                N.insert(makePointsToPair(CINode, P->second));
-    }
-
-    // The function can change it's formal arguments, but not it's actual
-    // arguments, since they are passed by value.
-    for (Value *V : CI->arg_operands()) {
-        PointsToNode *Node = factory.getNode(V);
-        for (auto P = Ain->pointee_begin(Node), E = Ain->pointee_end(Node); P != E; ++P) {
-            if (Lout.find(Node) != Lout.end())
-                N.insert(makePointsToPair(Node, *P));
-            insertReachable(*P);
-        }
-    }
-
-    // Anything that return values can point to are roots.
-    for (auto P = Aout.restriction_begin(ReturnValues), E = Aout.restriction_end(ReturnValues); P != E; ++P)
-        insertReachable(P->second);
-    // Globals are roots.
-    for (auto N : Globals)
-        insertReachable(N);
-
-    // We now determine which pairs are relevant.
-    for (auto P = Aout.restriction_begin(reachable), E = Aout.restriction_end(reachable); P != E; ++P)
-        N.insert(*P);
 }
 
 bool LivenessPointsTo::getCalledFunctionResult(const CallString &CS, Function *F, std::pair<LivenessSet, PointsToRelation>& Result) {
@@ -1119,6 +860,126 @@ std::set<PointsToNode *> LivenessPointsTo::getReturnValues(const Function *F) {
                 s.insert(factory.getNode(RI->getReturnValue()));
     }
     return s;
+}
+
+
+LivenessSet *LivenessPointsTo::removeActualArguments(CallInst *CI, LivenessSet *Lout, std::set<PointsToNode *> &ReturnValues, SmallVector<PointsToNode *, 8> &RemovedActualArguments) {
+    PointsToNode *CINode = factory.getNode(CI);
+
+    LivenessSet *L = new LivenessSet();
+    for (PointsToNode *N : *Lout) {
+        if (N == CINode) {
+            // If the CallInst is live, then each of the return values is live
+            // at the end of the function.
+            for (PointsToNode *ReturnValue : ReturnValues)
+                L->insert(ReturnValue);
+        }
+        else
+            L->insert(N);
+    }
+
+    // The values of the arguments are not live at the end of the function
+    // because they cannot be modified by the function; the are inserted into
+    // Lin from RemovedActualArguments later.
+    // FIXME: What about varargs?
+    for (Value *V : CI->arg_operands()) {
+        PointsToNode *ArgNode = factory.getNode(V);
+        if (L->find(ArgNode) != L->end()) {
+            L->erase(ArgNode);
+            RemovedActualArguments.push_back(ArgNode);
+        }
+    }
+
+    return L;
+}
+
+PointsToRelation *LivenessPointsTo::replaceActualArgumentsWithFormal(Function *Callee, CallInst *CI, PointsToRelation *Ain) {
+    SmallVector<std::pair<PointsToNode *, PointsToNode *>, 8> ArgMap;
+    auto Arg = Callee->arg_begin();
+    for (Value *V : CI->arg_operands()) {
+        PointsToNode *Node = factory.getNode(V);
+        // FIXME: What about varargs functions?
+        assert(Arg != Callee->arg_end() && "Argument count mismatch");
+        Argument *A = &*Arg;
+        PointsToNode *ANode = factory.getNode(A);
+
+        ArgMap.push_back({Node, ANode});
+
+        ++Arg;
+    }
+
+    PointsToRelation *R = new PointsToRelation();
+
+    for (auto I = Ain->begin(), E = Ain->end(); I != E; ++I) {
+        auto MapE = ArgMap.end();
+        auto MapI = std::find_if(ArgMap.begin(), MapE, [&](std::pair<PointsToNode *, PointsToNode *> P) {
+            return P.first == I->first;
+        });
+        if (MapI != MapE)
+            R->insert(makePointsToPair(MapI->second, I->second));
+        else
+            R->insert(*I);
+    }
+
+    return R;
+}
+
+LivenessSet LivenessPointsTo::replaceFormalArgumentsWithActual(const CallString &CS, Function *Callee, CallInst *CI, LivenessSet &CalledFunctionLin, SmallVector<PointsToNode *, 8> &RemovedActualArguments) {
+    LivenessSet L;
+    bool calleeNotInCallString = !CS.containsCallTo(Callee);
+
+    for (PointsToNode *N : CalledFunctionLin) {
+        if (NoAliasPointsToNode *NN = dyn_cast<NoAliasPointsToNode>(N)) {
+            if (calleeNotInCallString && NN->Definer == Callee) {
+                // If the node is defined in Callee and it is a summary node because it may exist in
+                // multiple stack frames, then it may be live at the beginning
+                // of the function. However, if there is no stack frame in which
+                // it exists, then it is safe to kill it.
+                continue;
+            }
+        }
+
+        L.insert(N);
+    }
+
+    // Replace formal arguments with actual arguments.
+    auto Arg = Callee->arg_begin();
+    for (Value *V : CI->arg_operands()) {
+        PointsToNode *Node = factory.getNode(V);
+        // FIXME: What about varargs functions?
+        assert(Arg != Callee->arg_end() && "Argument count mismatch");
+        Argument *A = &*Arg;
+        PointsToNode *ANode = factory.getNode(A);
+
+        if (L.find(ANode) != L.end()) {
+            L.erase(ANode);
+            L.insert(Node);
+        }
+
+        ++Arg;
+    }
+
+    // We also need to insert the actual arguments that are live after the
+    // call.
+    for (PointsToNode *N : RemovedActualArguments)
+        L.insert(N);
+
+    return L;
+}
+
+PointsToRelation LivenessPointsTo::replaceReturnValuesWithCallInst(CallInst *CI, PointsToRelation &Aout, std::set<PointsToNode *> &ReturnValues, LivenessSet *Lout) {
+    PointsToNode *CINode = factory.getNode(CI);
+    bool CINodeLive = Lout->find(CINode) != Lout->end();
+    PointsToRelation R;
+    for (auto I = Aout.begin(), E  = Aout.end(); I != E; ++I) {
+        if (ReturnValues.find(I->first) != ReturnValues.end()) {
+            if (CINodeLive)
+                R.insert(makePointsToPair(CINode, I->second));
+        }
+        else if (Lout->find(I->first) != Lout->end())
+            R.insert(*I);
+    }
+    return R;
 }
 
 void LivenessPointsTo::runOnFunction(Function *F, const CallString &CS, IntraproceduralPointsTo *Result, PointsToRelation *EntryPointsTo, LivenessSet *ExitLiveness, SmallVector<std::tuple<CallInst *, Function *, PointsToRelation *, LivenessSet *>, 8> &Calls) {
@@ -1211,18 +1072,12 @@ void LivenessPointsTo::runOnFunction(Function *F, const CallString &CS, Intrapro
 
             bool analysable = Called != nullptr && !Called->isDeclaration();
             if (analysable) {
-                PointsToNode *dummy = factory.getDummyNode(CI);
                 // The set of values that are returned from the function.
                 std::set<PointsToNode *> returnValues = getReturnValues(Called);
-                auto G = GlobalsMap.find(Called);
-                assert(G != GlobalsMap.end());
-                // The globals that the called function can access.
-                GlobalVector &CalledGlobals = G->second;
                 // Add to the list of calls made by the function for analysis later.
-                YesNoMaybe EverythingReachable = No;
-                auto EntryPT = getReachablePT(CS, Called, CI, instruction_ain, CalledGlobals, EverythingReachable);
-                auto ExitL = getReachable(Called, CI, instruction_ain, instruction_lout, CalledGlobals);
-                ExitL->insert(dummy);
+                auto EntryPT = replaceActualArgumentsWithFormal(Called, CI, instruction_ain);
+                SmallVector<PointsToNode *, 8> RemovedActualArguments;
+                auto ExitL = removeActualArguments(CI, instruction_lout, returnValues, RemovedActualArguments);
 
                 bool found = false;
                 for (auto I = Calls.begin(), E = Calls.end(); I != E; ++I) {
@@ -1247,39 +1102,11 @@ void LivenessPointsTo::runOnFunction(Function *F, const CallString &CS, Intrapro
                     auto calledFunctionLin = calledFunctionResult.first;
                     auto calledFunctionAout = calledFunctionResult.second;
 
-                    // The set of nodes that are live after the call executes,
-                    // but cannot possibly have been killed by the call.
-                    // If the node ? is reachable from the function, then
-                    // everything in Lout is reachable from the function. In
-                    // this case, ExitL contains a dummy node which all of these
-                    // nodes so that it can be determined if they are killed
-                    // inside the function.  Points-to pairs for these nodes do
-                    // not need to be tracked because they are not usable when
-                    // analysing the function; since the computed value of Ain
-                    // is restricted to nodes that are not killed, when a node
-                    // is killed any pairs with it as the first component will
-                    // be removed.
-                    LivenessSet survivesCall;
-                    bool dummyKilled = calledFunctionLin.find(dummy) == calledFunctionLin.end();
-                    // FIXME: Should this be EverythingReachable == Yes &&
-                    // dummyKilled?
-                    if (EverythingReachable != No && dummyKilled) {
-                        // If dummy is killed, then the function kills
-                        // everything; in this case, *nothing* survives the
-                        // call.
-                    }
-                    else {
-                        for (auto N : *instruction_lout)
-                            if (N != CINode && (ExitL->find(N) == ExitL->end() || N->multipleStackFrames()))
-                                survivesCall.insert(N);
-                    }
-
-                    // Compute lin for the current instruction. A live variable
-                    // here is either used after the call and not accessible
-                    // from the called function, or accessible from the called
-                    // function and live at the beginning of it.
-                    LivenessSet n = survivesCall;
-                    insertReachable(Called, CI, n, calledFunctionLin, instruction_ain, Globals);
+                    LivenessSet n = replaceFormalArgumentsWithActual(CS, Called, CI, calledFunctionLin, RemovedActualArguments);
+                    // The CallInst is killed by itself, and its value cannot be
+                    // used by itself, so it is not live immediately before the
+                    // call is executed.
+                    n.erase(CINode);
                     // If the function's return value has the noalias attribute
                     // and the noalias node is not a summary node, then it can
                     // be killed here.
@@ -1288,7 +1115,6 @@ void LivenessPointsTo::runOnFunction(Function *F, const CallString &CS, Intrapro
                         if (!NoAliasNode->isSummaryNode(CS))
                             n.erase(NoAliasNode);
                     }
-
                     // If the two sets are the same, then no changes need to be
                     // made to lin, so don't do anything here. Otherwise, we
                     // need to update lin and add the predecessors of the
@@ -1299,26 +1125,7 @@ void LivenessPointsTo::runOnFunction(Function *F, const CallString &CS, Intrapro
                         addPredsToWorklist = true;
                     }
 
-                    // Compute aout for the current instruction. The pairs that
-                    // should be included are those in ain that couldn't have
-                    // been killed by the call, plus those at the end of the
-                    // called instruction.
-                    survivesCall = LivenessSet();
-                    if (EverythingReachable == Yes && dummyKilled) {
-                        // If dummy is killed, then the function kills
-                        // everything; in this case, *nothing* survives the
-                        // call.
-                    }
-                    else {
-                        for (auto N : *instruction_lout)
-                            if (N != CINode && (ExitL->find(N) == ExitL->end() || N->multipleStackFrames()))
-                                survivesCall.insert(N);
-                    }
-
-                    PointsToRelation s;
-                    insertReachablePT(CI, s, calledFunctionAout, instruction_ain, *instruction_lout, returnValues, Globals);
-                    s.unionRelationRestriction(instruction_ain, &survivesCall);
-
+                    PointsToRelation s = replaceReturnValuesWithCallInst(CI, calledFunctionAout, returnValues, instruction_lout);
                     if (s != *instruction_aout) {
                         instruction_aout->clear();
                         instruction_aout->insertAll(s);
@@ -1331,7 +1138,6 @@ void LivenessPointsTo::runOnFunction(Function *F, const CallString &CS, Intrapro
                 // We reach this point if we have a declaration or function
                 // pointer. Just assume the worst case -- the function may
                 // invalidate or use anything that it has access to.
-                // TODO: Handle function pointers better.
 
                 // Compute lin for the current instruction. This consists of
                 // everything that is live after the call, plus the arguments,
