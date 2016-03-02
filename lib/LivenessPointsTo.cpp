@@ -669,33 +669,9 @@ bool hasPointee(PointsToRelation &S, PointsToNode *N) {
     return S.pointee_begin(N) != S.pointee_end(N);
 }
 
-void LivenessPointsTo::computeLout(Instruction *I, LivenessSet* Lout, IntraproceduralPointsTo *Result, PointsToRelation *Aout, bool insertGlobals, const GlobalVector &Globals) {
-    if (ReturnInst *RI = dyn_cast<ReturnInst>(I)) {
-        // For return instructions, if ExitLiveness was not nullptr, lout is
-        // exactly ExitLiveness; it is initialized to this, so don't change it
-        // here in this case. If it was nullptr, lout is the globals, return
-        // value, and any anything which is reachable from them; these need to
-        // be updated in this case.
-        if (insertGlobals) {
-            std::set<PointsToNode *> seen;
-            std::function<void(PointsToNode *)> insertReachable = [&](PointsToNode *N) {
-                if (seen.insert(N).second) {
-                    Lout->insert(N);
-                    for (auto P = Aout->pointee_begin(N), E = Aout->pointee_end(N); P != E; ++P)
-                        insertReachable(*P);
-
-                    // If a node is reachable, then so are its subnodes.
-                    for (auto *Child : N->children)
-                        insertReachable(Child);
-                }
-            };
-
-            Lout->clear();
-            for (auto I : Globals)
-                insertReachable(I);
-            if (RI->getReturnValue() != nullptr)
-                insertReachable(factory.getNode(RI->getReturnValue()));
-        }
+void LivenessPointsTo::computeLout(Instruction *I, LivenessSet* Lout, IntraproceduralPointsTo *Result) {
+    if (isa<ReturnInst>(I)) {
+        // After a return instruction, nothing is live.
     }
     else if (TerminatorInst *TI = dyn_cast<TerminatorInst>(I)) {
         // If this instruction is a terminator, it may have multiple
@@ -997,21 +973,16 @@ void LivenessPointsTo::runOnFunction(Function *F, const CallString &CS, Intrapro
     // The value that Ain should be initialized to at the first instruction.
     PointsToRelation *EPT = EntryPointsTo == nullptr ? new PointsToRelation() : nullptr;
 
-    // The global variables which are referred to by the function.
-    auto V = GlobalsMap.find(F);
-    assert(V != GlobalsMap.end());
-    GlobalVector &Globals = V->second;
-
     // Initialize ain, aout, lin and lout for each instruction, and ensure that
     // GEPs are handled correctly.
     for (inst_iterator S = inst_begin(F), I = S, E = inst_end(F); I != E; ++I) {
         Instruction *inst = &*I;
+
         // If the instruction is a ReturnInst, the values that are live after
         // the instruction is executed are exactly those specified in
-        // ExitLiveness, if it exists. If it does not exist, then they are the
-        // globals and everything the globals can point to. If the instruction
-        // is the first in the function, the points-to information before it is
-        // executed is exactly that in EntryPointsTo.
+        // ExitLiveness, if it exists. If the instruction is the first in the
+        // function, the points-to information before it is executed is exactly
+        // that in EntryPointsTo.
         if (isa<ReturnInst>(inst) && I == S)
             nonresult.insert(std::make_pair(inst, std::make_pair(ExitLiveness == nullptr ? EL : ExitLiveness, EntryPointsTo == nullptr ? EPT : EntryPointsTo)));
         else if (isa<ReturnInst>(inst))
@@ -1041,11 +1012,10 @@ void LivenessPointsTo::runOnFunction(Function *F, const CallString &CS, Intrapro
         auto instruction_nonresult = nonresult.find(&*I), instruction_result = Result->find(&*I);
         assert (instruction_nonresult != nonresult.end());
         assert (instruction_result != Result->end());
-        auto instruction_ain = instruction_nonresult->second.second,
-             instruction_aout = instruction_result->second.second;
+        auto instruction_ain = instruction_nonresult->second.second;
         auto instruction_lin = instruction_result->second.first,
              instruction_lout = instruction_nonresult->second.first;
-        computeLout(&*I, instruction_lout, Result, instruction_aout, ExitLiveness == nullptr, Globals);
+        computeLout(&*I, instruction_lout, Result);
         computeAin(&*I, F, instruction_ain, instruction_lin, Result, EntryPointsTo == nullptr);
     }
 
@@ -1069,7 +1039,7 @@ void LivenessPointsTo::runOnFunction(Function *F, const CallString &CS, Intrapro
              addSuccsToWorklist = false,
              addCurrToWorklist = false;
 
-        computeLout(I, instruction_lout, Result, instruction_aout, ExitLiveness == nullptr, Globals);
+        computeLout(I, instruction_lout, Result);
         addCurrToWorklist |= computeAin(I, F, instruction_ain, instruction_lin, Result, EntryPointsTo == nullptr);
 
         if (CallInst *CI = dyn_cast<CallInst>(I)) {
@@ -1347,47 +1317,7 @@ bool LivenessPointsTo::runOnFunctionAt(const CallString& CS,
 }
 
 void LivenessPointsTo::runOnModule(Module &M) {
-    std::function<void(User *, GlobalVector &)> insertOperands = [&](User *U, GlobalVector &Vector){
-        for (auto I = U->op_begin(), E = U->op_end(); I != E; ++I) {
-            Value *V = I->get();
-            if (isa<GlobalVariable>(V)) {
-                PointsToNode *GlobalNode = factory.getNode(V);
-                if (std::find(Vector.begin(), Vector.end(), GlobalNode) == Vector.end())
-                    Vector.push_back(GlobalNode);
-            }
-            else if (User *U = dyn_cast<User>(V))
-                insertOperands(U, Vector);
-        }
-    };
-
-    // Determine which global variables each function uses, and ensure that
-    // nodes are created for its instructions. The latter is required for GEP
-    // instructions to ensure that they are correctly registered as children of
-    // other nodes.
-    for (Function &F : M) {
-        if (!F.isDeclaration()) {
-            GlobalVector Vector;
-            for (auto I = inst_begin(F), E = inst_end(F); I != E; ++I) {
-                factory.getNode(&*I);
-                User *U = &*I;
-                insertOperands(U, Vector);
-            }
-            GlobalsMap.insert(std::make_pair(&F, Vector));
-        }
-    }
-    globals.clear();
-    for (auto I = M.global_begin(), E = M.global_end(); I != E; ++I) {
-        auto N = factory.getNode(&*I);
-        globals.insert(N);
-    }
-
-    for (Function &F : M) {
-        if (!F.isDeclaration()) {
-            // Note that the lout for the return instructions should contain all
-            // globals, and everything that they can point to. Since we don't
-            // know what they can point to here, we pass nullptr and work out
-            // the correct set during the analysis.
+    for (Function &F : M)
+        if (!F.isDeclaration())
             runOnFunctionAt(CallString::empty(), &F, nullptr, nullptr);
-        }
-    }
 }

@@ -20,11 +20,10 @@ public:
     std::set<PointsToNode *> getPointsToSet(const Value *, bool &);
     static unsigned worklistIterations, timesRanOnFunction;
 private:
-    typedef SmallVector<PointsToNode *, 16> GlobalVector;
     void insertNewPairs(PointsToRelation &, Instruction *, PointsToRelation *, LivenessSet *);
     void subtractKill(const CallString &CS, LivenessSet &, Instruction *, PointsToRelation *);
     void unionRef(LivenessSet &, Instruction *, LivenessSet *, PointsToRelation *);
-    void computeLout(Instruction *, LivenessSet * , IntraproceduralPointsTo *, PointsToRelation *, bool, const GlobalVector &);
+    void computeLout(Instruction *, LivenessSet * , IntraproceduralPointsTo *);
     bool computeAin(Instruction *, Function *, PointsToRelation *, LivenessSet *, IntraproceduralPointsTo *, bool InsertAtFirstInstruction);
     void insertReachableDeclaration(const CallString &, CallInst *, LivenessSet &, LivenessSet &, PointsToRelation *, YesNoMaybe &);
     bool getCalledFunctionResult(const CallString &, Function *, std::pair<LivenessSet, PointsToRelation>&);
@@ -39,8 +38,6 @@ private:
     LivenessSet getInvalidatedNodes(PointsToRelation *, CallInst *);
     PointsToData data;
     PointsToNodeFactory factory;
-    std::set<PointsToNode *> globals;
-    DenseMap<Function *, GlobalVector> GlobalsMap;
 };
 
 #endif
