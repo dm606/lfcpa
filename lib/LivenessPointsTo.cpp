@@ -960,18 +960,12 @@ PointsToRelation LivenessPointsTo::replaceReturnValuesWithCallInst(CallInst *CI,
 
 void LivenessPointsTo::runOnFunction(Function *F, const CallString &CS, IntraproceduralPointsTo *Result, PointsToRelation *EntryPointsTo, LivenessSet *ExitLiveness, SmallVector<std::tuple<CallInst *, Function *, PointsToRelation *, LivenessSet *>, 8> &Calls) {
     timesRanOnFunction++;
+    assert(EntryPointsTo != nullptr && ExitLiveness != nullptr);
     assert(!F->isDeclaration() && "Can only run on definitions.");
 
     // The result of the function is lin and aout (since liveness is propagated
     // backwards and points-to forwards); this variable contains lout and ain.
     IntraproceduralPointsTo nonresult;
-
-    // The value that Lout should be initialized to at all of the return
-    // instructions.
-    LivenessSet *EL = ExitLiveness == nullptr ? new LivenessSet() : nullptr;
-
-    // The value that Ain should be initialized to at the first instruction.
-    PointsToRelation *EPT = EntryPointsTo == nullptr ? new PointsToRelation() : nullptr;
 
     // Initialize ain, aout, lin and lout for each instruction, and ensure that
     // GEPs are handled correctly.
@@ -984,13 +978,13 @@ void LivenessPointsTo::runOnFunction(Function *F, const CallString &CS, Intrapro
         // function, the points-to information before it is executed is exactly
         // that in EntryPointsTo.
         if (isa<ReturnInst>(inst) && I == S)
-            nonresult.insert(std::make_pair(inst, std::make_pair(ExitLiveness == nullptr ? EL : ExitLiveness, EntryPointsTo == nullptr ? EPT : EntryPointsTo)));
+            nonresult.insert({inst, {ExitLiveness, EntryPointsTo}});
         else if (isa<ReturnInst>(inst))
-            nonresult.insert(std::make_pair(inst, std::make_pair(ExitLiveness == nullptr ? EL : ExitLiveness, new PointsToRelation())));
+            nonresult.insert({inst, {ExitLiveness, new PointsToRelation()}});
         else if (I == S)
-            nonresult.insert(std::make_pair(inst, std::make_pair(new LivenessSet(), EntryPointsTo == nullptr ? EPT : EntryPointsTo)));
+            nonresult.insert({inst, {new LivenessSet(), EntryPointsTo}});
         else
-            nonresult.insert(std::make_pair(inst, std::make_pair(new LivenessSet(), new PointsToRelation())));
+            nonresult.insert({inst, {new LivenessSet(), new PointsToRelation()}});
 
         if (GetElementPtrInst *GEP = dyn_cast<GetElementPtrInst>(inst)) {
             // If some GEPs which are based on a pointer have all constant
@@ -1016,7 +1010,7 @@ void LivenessPointsTo::runOnFunction(Function *F, const CallString &CS, Intrapro
         auto instruction_lin = instruction_result->second.first,
              instruction_lout = instruction_nonresult->second.first;
         computeLout(&*I, instruction_lout, Result);
-        computeAin(&*I, F, instruction_ain, instruction_lin, Result, EntryPointsTo == nullptr);
+        computeAin(&*I, F, instruction_ain, instruction_lin, Result, !CS.isEmpty());
     }
 
     // Update points-to and liveness information until it converges.
@@ -1040,7 +1034,7 @@ void LivenessPointsTo::runOnFunction(Function *F, const CallString &CS, Intrapro
              addCurrToWorklist = false;
 
         computeLout(I, instruction_lout, Result);
-        addCurrToWorklist |= computeAin(I, F, instruction_ain, instruction_lin, Result, EntryPointsTo == nullptr);
+        addCurrToWorklist |= computeAin(I, F, instruction_ain, instruction_lin, Result, !CS.isEmpty());
 
         if (CallInst *CI = dyn_cast<CallInst>(I)) {
             PointsToNode *CINode = factory.getNode(CI);
@@ -1319,5 +1313,5 @@ bool LivenessPointsTo::runOnFunctionAt(const CallString& CS,
 void LivenessPointsTo::runOnModule(Module &M) {
     for (Function &F : M)
         if (!F.isDeclaration())
-            runOnFunctionAt(CallString::empty(), &F, nullptr, nullptr);
+            runOnFunctionAt(CallString::empty(), &F, new PointsToRelation(), new LivenessSet());
 }
