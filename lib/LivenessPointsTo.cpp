@@ -840,19 +840,17 @@ std::set<PointsToNode *> LivenessPointsTo::getReturnValues(const Function *F) {
 }
 
 
-LivenessSet *LivenessPointsTo::removeActualArguments(CallInst *CI, LivenessSet *Lout, std::set<PointsToNode *> &ReturnValues, SmallVector<PointsToNode *, 8> &RemovedActualArguments) {
+LivenessSet LivenessPointsTo::removeActualArguments(CallInst *CI, LivenessSet *Lout, std::set<PointsToNode *> &ReturnValues, SmallVector<PointsToNode *, 8> &RemovedActualArguments) {
     PointsToNode *CINode = factory.getNode(CI);
 
-    LivenessSet *L = new LivenessSet();
+    LivenessSet L;
     for (PointsToNode *N : *Lout) {
         if (N == CINode) {
-            // If the CallInst is live, then each of the return values is live
-            // at the end of the function.
-            for (PointsToNode *ReturnValue : ReturnValues)
-                L->insert(ReturnValue);
+            // Return values will be made live in the correct places when
+            // analysing the function if necessary.
         }
         else
-            L->insert(N);
+            L.insert(N);
     }
 
     // The values of the arguments are not live at the end of the function
@@ -861,8 +859,8 @@ LivenessSet *LivenessPointsTo::removeActualArguments(CallInst *CI, LivenessSet *
     // FIXME: What about varargs?
     for (Value *V : CI->arg_operands()) {
         PointsToNode *ArgNode = factory.getNode(V);
-        if (L->find(ArgNode) != L->end()) {
-            L->erase(ArgNode);
+        if (L.find(ArgNode) != L.end()) {
+            L.erase(ArgNode);
             RemovedActualArguments.push_back(ArgNode);
         }
     }
@@ -959,9 +957,9 @@ PointsToRelation LivenessPointsTo::replaceReturnValuesWithCallInst(CallInst *CI,
     return R;
 }
 
-void LivenessPointsTo::runOnFunction(Function *F, const CallString &CS, IntraproceduralPointsTo *Result, PointsToRelation *EntryPointsTo, LivenessSet *ExitLiveness, SmallVector<std::tuple<CallInst *, Function *, PointsToRelation *, LivenessSet *>, 8> &Calls) {
+void LivenessPointsTo::runOnFunction(Function *F, const CallString &CS, IntraproceduralPointsTo *Result, PointsToRelation *EntryPointsTo, LivenessSet &ExitLiveness, bool MakeReturnValuesLive, SmallVector<std::tuple<CallInst *, Function *, PointsToRelation *, LivenessSet, bool>, 8> &Calls) {
     timesRanOnFunction++;
-    assert(EntryPointsTo != nullptr && ExitLiveness != nullptr);
+    assert(EntryPointsTo != nullptr);
     assert(!F->isDeclaration() && "Can only run on definitions.");
 
     // The result of the function is lin and aout (since liveness is propagated
@@ -978,10 +976,17 @@ void LivenessPointsTo::runOnFunction(Function *F, const CallString &CS, Intrapro
         // ExitLiveness, if it exists. If the instruction is the first in the
         // function, the points-to information before it is executed is exactly
         // that in EntryPointsTo.
-        if (isa<ReturnInst>(inst) && I == S)
-            nonresult.insert({inst, {ExitLiveness, EntryPointsTo}});
-        else if (isa<ReturnInst>(inst))
-            nonresult.insert({inst, {ExitLiveness, new PointsToRelation()}});
+        if (ReturnInst *RI = dyn_cast<ReturnInst>(inst)) {
+            LivenessSet *L = new LivenessSet();
+            L->insertAll(ExitLiveness);
+            if (RI->getReturnValue() != nullptr && MakeReturnValuesLive)
+                L->insert(factory.getNode(RI->getReturnValue()));
+
+            if (I == S)
+                nonresult.insert({inst, {L, EntryPointsTo}});
+            else
+                nonresult.insert({inst, {L, new PointsToRelation()}});
+        }
         else if (I == S)
             nonresult.insert({inst, {new LivenessSet(), EntryPointsTo}});
         else
@@ -1050,24 +1055,26 @@ void LivenessPointsTo::runOnFunction(Function *F, const CallString &CS, Intrapro
                 auto EntryPT = replaceActualArgumentsWithFormal(Called, CI, instruction_ain);
                 SmallVector<PointsToNode *, 8> RemovedActualArguments;
                 auto ExitL = removeActualArguments(CI, instruction_lout, returnValues, RemovedActualArguments);
+                bool RVL = instruction_lout->find(CINode) != instruction_lout->end();
 
                 bool found = false;
                 for (auto I = Calls.begin(), E = Calls.end(); I != E; ++I) {
                     CallInst *TupleCI;
                     Function *TupleF;
                     PointsToRelation *TuplePT;
-                    LivenessSet *TupleL;
-                    std::tie(TupleCI, TupleF, TuplePT, TupleL) = *I;
+                    LivenessSet TupleL;
+                    bool TupleReturnValuesLive;
+                    std::tie(TupleCI, TupleF, TuplePT, TupleL, TupleReturnValuesLive) = *I;
                     if (TupleCI == CI && TupleF == Called) {
                         // Update the call with the new points-to and liveness
                         // information.
-                        *I = std::make_tuple(CI, Called, EntryPT, ExitL);
+                        *I = std::make_tuple(CI, Called, EntryPT, ExitL, RVL);
                         found = true;
                         break;
                     }
                 }
                 if (!found)
-                    Calls.push_back(std::make_tuple(CI, Called, EntryPT, ExitL));
+                    Calls.push_back(std::make_tuple(CI, Called, EntryPT, ExitL, RVL));
 
                 std::pair<LivenessSet, PointsToRelation> calledFunctionResult;
                 if (getCalledFunctionResult(newCS, Called, calledFunctionResult)) {
@@ -1265,11 +1272,12 @@ void LivenessPointsTo::runOnFunction(Function *F, const CallString &CS, Intrapro
 bool LivenessPointsTo::runOnFunctionAt(const CallString& CS,
                                        Function *F,
                                        PointsToRelation *EntryPointsTo,
-                                       LivenessSet *ExitLiveness) {
+                                       LivenessSet &ExitLiveness,
+                                       bool MakeReturnValuesLive) {
     IntraproceduralPointsTo *Out = data.getPointsTo(CS, F);
     IntraproceduralPointsTo *Copy = copyPointsToMap(Out);
-    SmallVector<std::tuple<CallInst *, Function *, PointsToRelation *, LivenessSet *>, 8> Calls;
-    runOnFunction(F, CS, Out, EntryPointsTo, ExitLiveness, Calls);
+    SmallVector<std::tuple<CallInst *, Function *, PointsToRelation *, LivenessSet, bool>, 8> Calls;
+    runOnFunction(F, CS, Out, EntryPointsTo, ExitLiveness, MakeReturnValuesLive, Calls);
 
     if (arePointsToMapsEqual(F, Out, Copy)) {
         // If there is a prefix with the same information, then make it
@@ -1289,12 +1297,13 @@ bool LivenessPointsTo::runOnFunctionAt(const CallString& CS,
             CallInst *I;
             Function *F;
             PointsToRelation *PT;
-            LivenessSet *L;
-            std::tie(I, F, PT, L) = C;
-            rerun |= runOnFunctionAt(CS.addCallSite(I), F, PT, L);
+            LivenessSet L;
+            bool RVL;
+            std::tie(I, F, PT, L, RVL) = C;
+            rerun |= runOnFunctionAt(CS.addCallSite(I), F, PT, L, RVL);
         }
         if (rerun)
-            return runOnFunctionAt(CS, F, EntryPointsTo, ExitLiveness);
+            return runOnFunctionAt(CS, F, EntryPointsTo, ExitLiveness, MakeReturnValuesLive);
         else
             return false;
     }
@@ -1307,12 +1316,14 @@ bool LivenessPointsTo::runOnFunctionAt(const CallString& CS,
             return true;
         // If there is no caller, then rerun the analysis here. We'll consider
         // the callees when a fixed point is reached.
-        return runOnFunctionAt(CS, F, EntryPointsTo, ExitLiveness);
+        return runOnFunctionAt(CS, F, EntryPointsTo, ExitLiveness, MakeReturnValuesLive);
     }
 }
 
 void LivenessPointsTo::runOnModule(Module &M) {
     for (Function &F : M)
-        if (!F.isDeclaration())
-            runOnFunctionAt(CallString::empty(), &F, new PointsToRelation(), new LivenessSet());
+        if (!F.isDeclaration()) {
+            LivenessSet L;
+            runOnFunctionAt(CallString::empty(), &F, new PointsToRelation(), L, true);
+        }
 }
