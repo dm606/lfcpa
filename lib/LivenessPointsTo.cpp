@@ -34,7 +34,8 @@ std::set<PointsToNode *> LivenessPointsTo::getPointsToSet(const Value *V, bool &
         for (auto p : *P) {
             if (p.first == CallString::empty()) {
                 auto P = p.second->find(I);
-                assert(P != p.second->end());
+                if (P == p.second->end())
+                    return std::set<PointsToNode *>();
                 PointsToRelation *R = P->second.second;
                 std::set<PointsToNode *> s;
                 for (auto Pointee = R->pointee_begin(N), E = R->pointee_end(N); Pointee != E; ++Pointee)
