@@ -113,21 +113,7 @@ struct LivenessBasedAA : public ModulePass, public AliasAnalysis {
         return NoAlias;
     }
 
-    std::string f(AliasResult r) {
-        switch (r) {
-            case NoAlias:
-                return "NoAlias";
-            case MayAlias:
-                return "MayAlias";
-            case PartialAlias:
-                return "PartialAlias";
-            case MustAlias:
-                return "MustAlias";
-        }
-        return "";
-    }
-
-    AliasResult alias(const MemoryLocation &LocA,
+   AliasResult alias(const MemoryLocation &LocA,
                       const MemoryLocation &LocB) override {
         AliasResult result = getResult(LocA, LocB);
 
