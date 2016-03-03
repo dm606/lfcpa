@@ -248,7 +248,9 @@ class NoAliasPointsToNode : public PointsToNode {
             if (summaryNode)
                 return true;
 
-            if (CS.containsCallTo(Definer))
+            // FIXME: This returns true iff the call string contains more than
+            // one call to Definer; is this the correct condition here?
+            if (CS.containsMultipleCallsTo(Definer))
                 return true;
 
             return false;

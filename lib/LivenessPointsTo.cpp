@@ -840,7 +840,7 @@ std::set<PointsToNode *> LivenessPointsTo::getReturnValues(const Function *F) {
 }
 
 
-LivenessSet LivenessPointsTo::removeActualArguments(CallInst *CI, LivenessSet *Lout, std::set<PointsToNode *> &ReturnValues, SmallVector<PointsToNode *, 8> &RemovedActualArguments) {
+LivenessSet LivenessPointsTo::removeActualArguments(CallInst *CI, LivenessSet *Lout, SmallVector<PointsToNode *, 8> &RemovedActualArguments) {
     PointsToNode *CINode = factory.getNode(CI);
 
     LivenessSet L;
@@ -1054,7 +1054,7 @@ void LivenessPointsTo::runOnFunction(Function *F, const CallString &CS, Intrapro
                 // Add to the list of calls made by the function for analysis later.
                 auto EntryPT = replaceActualArgumentsWithFormal(Called, CI, instruction_ain);
                 SmallVector<PointsToNode *, 8> RemovedActualArguments;
-                auto ExitL = removeActualArguments(CI, instruction_lout, returnValues, RemovedActualArguments);
+                auto ExitL = removeActualArguments(CI, instruction_lout, RemovedActualArguments);
                 bool RVL = instruction_lout->find(CINode) != instruction_lout->end();
 
                 bool found = false;

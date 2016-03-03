@@ -51,6 +51,22 @@ class CallString {
                         return true;
             return false;
         }
+
+        inline bool containsMultipleCallsTo(const Function *F) const {
+            assert(!isCyclic());
+            bool foundCall = false;
+            for (Instruction *I : nonCyclic) {
+                if (CallInst *CI = dyn_cast<CallInst>(I)) {
+                    if (CI->getCalledFunction() == nullptr || CI->getCalledFunction() == F) {
+                        if (foundCall)
+                            return true;
+                        else
+                            foundCall = true;
+                    }
+                }
+            }
+            return false;
+        }
     private:
         SmallVector<Instruction *, 8> nonCyclic;
         SmallVector<Instruction *, 8> cyclic;
