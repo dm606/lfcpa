@@ -33,7 +33,7 @@ IntraproceduralPointsTo *copyPointsToMap(IntraproceduralPointsTo *M) {
     return Result;
 }
 
-IntraproceduralPointsTo *PointsToData::getPointsTo(const CallString &CS, Function *F) {
+IntraproceduralPointsTo *PointsToData::getPointsTo(const CallString &CS, Function *F, PointsToRelation &EntryPT, LivenessSet &ExitL, bool &Changed) {
     assert (!CS.isCyclic() && "Information has already been computed.");
 
     auto P = data.find(F);
@@ -46,7 +46,8 @@ IntraproceduralPointsTo *PointsToData::getPointsTo(const CallString &CS, Functio
         Pointsto = P->second;
 
     for (auto I = Pointsto->begin(), E = Pointsto->end(); I != E; ++I) {
-        if (I->first.isCyclic() && I->first.matches(CS)) {
+        CallString ICS = std::get<0>(*I);
+        if (ICS.isCyclic() && ICS.matches(CS)) {
             // We need to remove the call string completely here because it may
             // have been made cyclic prematurely. It is possible to break here
             // because the removal of call strings in
@@ -54,15 +55,28 @@ IntraproceduralPointsTo *PointsToData::getPointsTo(const CallString &CS, Functio
             Pointsto->erase(I);
             break;
         }
-        if (CS == I->first)
-            return I->second;
+        if (CS == ICS) {
+            auto IData = std::get<1>(*I);
+            PointsToRelation IPT = std::get<2>(*I);
+            LivenessSet IL = std::get<3>(*I);
+            if (IPT == EntryPT && IL == ExitL) {
+                Changed = false;
+                return IData;
+            }
+            else {
+                *I = std::make_tuple(ICS, IData, IPT, IL);
+                Changed = true;
+                return IData;
+            }
+        }
     }
 
     // The call string wasn't found.
     IntraproceduralPointsTo *Out = new IntraproceduralPointsTo();
     for (inst_iterator I = inst_begin(F), E = inst_end(F); I != E; ++I)
-        Out->insert(std::make_pair(&*I, std::make_pair(new LivenessSet(), new PointsToRelation())));
-    Pointsto->push_back(std::make_pair(CS, Out));
+        Out->insert({&*I, {new LivenessSet(), new PointsToRelation()}});
+    Pointsto->push_back(std::make_tuple(CS, Out, EntryPT, ExitL));
+    Changed = true;
     return Out;
 }
 
@@ -84,26 +98,30 @@ bool PointsToData::attemptMakeCyclicCallString(Function *F, const CallString &CS
     // extra S' to the end does not change the points to map.
     auto I = V->begin(), E = V->end();
     for (; I != E; ++I) {
-        auto pair = *I;
-        if (!pair.first.isCyclic() &&
+        auto ICS = std::get<0>(*I);
+        auto IData = std::get<1>(*I);
+        auto IPT = std::get<2>(*I);
+        auto IL = std::get<3>(*I);
+        if (!ICS.isCyclic() &&
             // FIXME: Maybe call is slightly too specific. What about matching
             // the called functions? What about not requiring !empty?
-            !pair.first.isEmpty() &&
-            pair.first.getLastCall() == LastCall &&
-            CS.isNonCyclicPrefix(pair.first) &&
-            arePointsToMapsEqual(F, pair.second, Out)) {
-            CallString newCS = CS.createCyclicFromPrefix(pair.first);
-            *I = std::make_pair(newCS, Out);
+            !ICS.isEmpty() &&
+            ICS.getLastCall() == LastCall &&
+            CS.isNonCyclicPrefix(ICS) &&
+            arePointsToMapsEqual(F, IData, Out)) {
+            CallString newCS = CS.createCyclicFromPrefix(ICS);
+            *I = std::make_tuple(newCS, Out, IPT, IL);
             break;
         }
     }
 
     if (I != E) {
-        CallString R = I->first;
+        auto ICS = std::get<0>(*I);
+        CallString R = ICS;
         // Remove all call strings that match the inserted one.
         for (auto I2 = V->begin(); I2 != E; ) {
-            if (I != I2 && !I2->first.isCyclic() && R.matches(I2->first)) {
-                I2=V->erase(I2);
+            if (I != I2 && !std::get<0>(*I2).isCyclic() && R.matches(std::get<0>(*I2))) {
+                I2 = V->erase(I2);
                 E = V->end();
             }
             else
@@ -135,24 +153,26 @@ IntraproceduralPointsTo *PointsToData::getAtLongestPrefix(const Function *F, con
     IntraproceduralPointsTo *Result = nullptr;
     int prefixLength = 0;
     for (auto P : *V) {
+        auto PCS = std::get<0>(P);
+        auto PData = std::get<1>(P);
         // If the call string is empty, then the function was not analysed as a
         // callee, so the data should not be used here.
-        if (P.first == CallString::empty())
+        if (PCS == CallString::empty())
             continue;
 
-        if (P.first.isCyclic()) {
+        if (PCS.isCyclic()) {
             // We only consider exact matches here.
-            if (P.first.matches(CS))
-                return P.second;
+            if (PCS.matches(CS))
+                return PData;
         }
         else {
-            if (P.first.matches(CS))
-                return P.second;
+            if (PCS.matches(CS))
+                return PData;
             else {
-                int l = P.first.size();
-                if (l >= prefixLength && CS.isNonCyclicPrefix(P.first)) {
+                int l = PCS.size();
+                if (l >= prefixLength && CS.isNonCyclicPrefix(PCS)) {
                     prefixLength = l;
-                    Result = P.second;
+                    Result = PData;
                 }
             }
         }

@@ -32,9 +32,9 @@ std::set<PointsToNode *> LivenessPointsTo::getPointsToSet(const Value *V, bool &
         const Function *F = BB->getParent();
         ProcedurePointsTo *P = data.getAtFunction(F);
         for (auto p : *P) {
-            if (p.first == CallString::empty()) {
-                auto P = p.second->find(I);
-                if (P == p.second->end())
+            if (std::get<0>(p) == CallString::empty()) {
+                auto P = std::get<1>(p)->find(I);
+                if (P == std::get<1>(p)->end())
                     return std::set<PointsToNode *>();
                 PointsToRelation *R = P->second.second;
                 std::set<PointsToNode *> s;
@@ -1285,8 +1285,15 @@ bool LivenessPointsTo::runOnFunctionAt(const CallString& CS,
                                        Function *F,
                                        PointsToRelation *EntryPointsTo,
                                        LivenessSet &ExitLiveness,
-                                       bool MakeReturnValuesLive) {
-    IntraproceduralPointsTo *Out = data.getPointsTo(CS, F);
+                                       bool MakeReturnValuesLive,
+                                       bool AlwaysRerun) {
+    bool Changed = true;
+    IntraproceduralPointsTo *Out = data.getPointsTo(CS, F, *EntryPointsTo, ExitLiveness, Changed);
+    if (!AlwaysRerun && !Changed) {
+        // If the boundary information has not changed since the analysis was
+        // last run on this function, then there is no need to run it again.
+        return false;
+    }
     IntraproceduralPointsTo *Copy = copyPointsToMap(Out);
     SmallVector<std::tuple<CallInst *, Function *, PointsToRelation *, LivenessSet, bool>, 8> Calls;
     runOnFunction(F, CS, Out, EntryPointsTo, ExitLiveness, MakeReturnValuesLive, Calls);
@@ -1312,10 +1319,10 @@ bool LivenessPointsTo::runOnFunctionAt(const CallString& CS,
             LivenessSet L;
             bool RVL;
             std::tie(I, F, PT, L, RVL) = C;
-            rerun |= runOnFunctionAt(CS.addCallSite(I), F, PT, L, RVL);
+            rerun |= runOnFunctionAt(CS.addCallSite(I), F, PT, L, RVL, false);
         }
         if (rerun)
-            return runOnFunctionAt(CS, F, EntryPointsTo, ExitLiveness, MakeReturnValuesLive);
+            return runOnFunctionAt(CS, F, EntryPointsTo, ExitLiveness, MakeReturnValuesLive, true);
         else
             return false;
     }
@@ -1328,7 +1335,7 @@ bool LivenessPointsTo::runOnFunctionAt(const CallString& CS,
             return true;
         // If there is no caller, then rerun the analysis here. We'll consider
         // the callees when a fixed point is reached.
-        return runOnFunctionAt(CS, F, EntryPointsTo, ExitLiveness, MakeReturnValuesLive);
+        return runOnFunctionAt(CS, F, EntryPointsTo, ExitLiveness, MakeReturnValuesLive, true);
     }
 }
 
@@ -1336,6 +1343,6 @@ void LivenessPointsTo::runOnModule(Module &M) {
     for (Function &F : M)
         if (!F.isDeclaration()) {
             LivenessSet L;
-            runOnFunctionAt(CallString::empty(), &F, new PointsToRelation(), L, true);
+            runOnFunctionAt(CallString::empty(), &F, new PointsToRelation(), L, true, true);
         }
 }

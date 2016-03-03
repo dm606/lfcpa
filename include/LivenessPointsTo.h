@@ -33,7 +33,7 @@ private:
     LivenessSet replaceFormalArgumentsWithActual(const CallString &CS, Function *, CallInst *, LivenessSet &, SmallVector<PointsToNode *, 8> &);
     PointsToRelation replaceReturnValuesWithCallInst(CallInst *, PointsToRelation &, std::set<PointsToNode *> &, LivenessSet *);
     void runOnFunction(Function *, const CallString &, IntraproceduralPointsTo *, PointsToRelation *, LivenessSet &, bool, SmallVector<std::tuple<CallInst *, Function *, PointsToRelation *, LivenessSet, bool>, 8> &);
-    bool runOnFunctionAt(const CallString &, Function *, PointsToRelation *, LivenessSet &, bool);
+    bool runOnFunctionAt(const CallString &, Function *, PointsToRelation *, LivenessSet &, bool, bool);
     void addNotInvalidatedRestricted(PointsToRelation &, PointsToRelation *, CallInst *, LivenessSet *);
     LivenessSet getInvalidatedNodes(PointsToRelation *, CallInst *);
     PointsToData data;

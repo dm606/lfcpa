@@ -34,8 +34,8 @@ struct TestPass : public ModulePass {
                 errs() << "\n";
                 errs() << "Function: " << F.getName() << "\n";
                 errs() << "Call string: ";
-                P.first.dump();
-                IntraproceduralPointsTo *pt = P.second;
+                std::get<0>(P).dump();
+                IntraproceduralPointsTo *pt = std::get<1>(P);
 
                 for (BasicBlock &BB : F) {
                     errs() << BB.getName() << ":\n";
