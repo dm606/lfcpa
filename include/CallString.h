@@ -40,31 +40,37 @@ class CallString {
             return nonCyclic.back();
         }
 
-        inline bool containsCallTo(const Function *F) const {
+        inline bool containsCallIn(const Function *F) const {
             for (Instruction *I : nonCyclic)
                 if (CallInst *CI = dyn_cast<CallInst>(I))
-                    if (CI->getCalledFunction() == nullptr || CI->getCalledFunction() == F)
+                    if (CI->getParent()->getParent() == F)
                         return true;
             for (Instruction *I : cyclic)
                 if (CallInst *CI = dyn_cast<CallInst>(I))
-                    if (CI->getCalledFunction() == nullptr || CI->getCalledFunction() == F)
+                    if (CI->getParent()->getParent() == F)
                         return true;
             return false;
         }
 
-        inline bool containsMultipleCallsTo(const Function *F) const {
+        inline bool reachedMoreThanOnce(const Function *F) const {
             assert(!isCyclic());
             bool foundCall = false;
+            CallInst *Last = nullptr;
             for (Instruction *I : nonCyclic) {
                 if (CallInst *CI = dyn_cast<CallInst>(I)) {
-                    if (CI->getCalledFunction() == nullptr || CI->getCalledFunction() == F) {
+                    if (CI->getParent()->getParent() == F) {
                         if (foundCall)
                             return true;
                         else
                             foundCall = true;
                     }
+                    Last = CI;
                 }
             }
+
+            if (foundCall && Last != nullptr)
+                return Last->getCalledFunction() == nullptr || Last->getCalledFunction() == F;
+
             return false;
         }
     private:

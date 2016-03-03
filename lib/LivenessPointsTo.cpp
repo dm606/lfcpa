@@ -871,6 +871,7 @@ LivenessSet LivenessPointsTo::removeActualArguments(CallInst *CI, LivenessSet *L
 PointsToRelation *LivenessPointsTo::replaceActualArgumentsWithFormal(Function *Callee, CallInst *CI, PointsToRelation *Ain) {
     SmallVector<std::pair<PointsToNode *, PointsToNode *>, 8> ArgMap;
     auto Arg = Callee->arg_begin();
+    PointsToRelation *R = new PointsToRelation();
     for (Value *V : CI->arg_operands()) {
         PointsToNode *Node = factory.getNode(V);
         // FIXME: What about varargs functions?
@@ -879,11 +880,14 @@ PointsToRelation *LivenessPointsTo::replaceActualArgumentsWithFormal(Function *C
         PointsToNode *ANode = factory.getNode(A);
 
         ArgMap.push_back({Node, ANode});
+        if (Node->singlePointee()) {
+            // These nodes won't be seen in the next loop, so insert the correct
+            // pairs for them into Ain here.
+            R->insert(makePointsToPair(ANode, Node->getSinglePointee()));
+        }
 
         ++Arg;
     }
-
-    PointsToRelation *R = new PointsToRelation();
 
     for (auto I = Ain->begin(), E = Ain->end(); I != E; ++I) {
         auto MapE = ArgMap.end();
@@ -901,11 +905,11 @@ PointsToRelation *LivenessPointsTo::replaceActualArgumentsWithFormal(Function *C
 
 LivenessSet LivenessPointsTo::replaceFormalArgumentsWithActual(const CallString &CS, Function *Callee, CallInst *CI, LivenessSet &CalledFunctionLin, SmallVector<PointsToNode *, 8> &RemovedActualArguments) {
     LivenessSet L;
-    bool calleeNotInCallString = !CS.containsCallTo(Callee);
+    bool calleeInCallString = CI->getParent()->getParent() == Callee || CS.containsCallIn(Callee);
 
     for (PointsToNode *N : CalledFunctionLin) {
         if (NoAliasPointsToNode *NN = dyn_cast<NoAliasPointsToNode>(N)) {
-            if (calleeNotInCallString && NN->Definer == Callee) {
+            if (!calleeInCallString && NN->Definer == Callee) {
                 // If the node is defined in Callee and it is a summary node because it may exist in
                 // multiple stack frames, then it may be live at the beginning
                 // of the function. However, if there is no stack frame in which
@@ -1016,7 +1020,7 @@ void LivenessPointsTo::runOnFunction(Function *F, const CallString &CS, Intrapro
         auto instruction_lin = instruction_result->second.first,
              instruction_lout = instruction_nonresult->second.first;
         computeLout(&*I, instruction_lout, Result);
-        computeAin(&*I, F, instruction_ain, instruction_lin, Result, !CS.isEmpty());
+        computeAin(&*I, F, instruction_ain, instruction_lin, Result, CS.isEmpty());
     }
 
     // Update points-to and liveness information until it converges.
@@ -1040,7 +1044,7 @@ void LivenessPointsTo::runOnFunction(Function *F, const CallString &CS, Intrapro
              addCurrToWorklist = false;
 
         computeLout(I, instruction_lout, Result);
-        addCurrToWorklist |= computeAin(I, F, instruction_ain, instruction_lin, Result, !CS.isEmpty());
+        addCurrToWorklist |= computeAin(I, F, instruction_ain, instruction_lin, Result, CS.isEmpty());
 
         if (CallInst *CI = dyn_cast<CallInst>(I)) {
             PointsToNode *CINode = factory.getNode(CI);
@@ -1105,6 +1109,14 @@ void LivenessPointsTo::runOnFunction(Function *F, const CallString &CS, Intrapro
                     }
 
                     PointsToRelation s = replaceReturnValuesWithCallInst(CI, calledFunctionAout, returnValues, instruction_lout);
+                    for (auto I = instruction_ain->begin(), E = instruction_ain->end(); I != E; ++I) {
+                        if (I->first->isSummaryNode(CS)) {
+                            // We shouldn't allow the function call to remove
+                            // this pair. (Actually it is never *removed*, but
+                            // it just isn't discovered in recursive functions).
+                            s.insert(*I);
+                        }
+                    }
                     if (s != *instruction_aout) {
                         instruction_aout->clear();
                         instruction_aout->insertAll(s);

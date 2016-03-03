@@ -250,7 +250,7 @@ class NoAliasPointsToNode : public PointsToNode {
 
             // FIXME: This returns true iff the call string contains more than
             // one call to Definer; is this the correct condition here?
-            if (CS.containsMultipleCallsTo(Definer))
+            if (CS.reachedMoreThanOnce(Definer))
                 return true;
 
             return false;
