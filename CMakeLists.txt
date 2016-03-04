@@ -16,7 +16,7 @@ add_definitions(${LLVM_DEFINITIONS})
 
 include_directories(include)
 add_llvm_loadable_module(
-    TestPass
+    lfcpa
     TestPass.cpp
     lib/CallString.cpp
     lib/LivenessBasedAA.cpp
