@@ -1,8 +1,10 @@
 #include "llvm/Analysis/AliasAnalysis.h"
 #include "llvm/Analysis/Passes.h"
+#include "llvm/IR/LegacyPassManager.h"
 #include "llvm/IR/Module.h"
 #include "llvm/Pass.h"
 #include "llvm/Support/raw_ostream.h"
+#include "llvm/Transforms/IPO/PassManagerBuilder.h"
 
 #include "LivenessPointsTo.h"
 
@@ -134,5 +136,10 @@ struct LivenessBasedAA : public ModulePass, public AliasAnalysis {
 }
 
 char LivenessBasedAA::ID = 0;
-static RegisterPass<LivenessBasedAA> X("lfcpa", "Liveness-based alias analysis pass.", false, false);
+static RegisterPass<LivenessBasedAA> X("lfcpa", "Liveness-based alias analysis", false, false);
 static RegisterAnalysisGroup<AliasAnalysis> Y(X);
+
+static void registerClangPass(const PassManagerBuilder &, legacy::PassManagerBase &PM) {
+    PM.add(new LivenessBasedAA());
+}
+static RegisterStandardPasses RegisterClangPass(PassManagerBuilder::EP_ModuleOptimizerEarly, registerClangPass);
