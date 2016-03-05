@@ -134,17 +134,6 @@ PointsToNode* PointsToNodeFactory::getGlobalNode(const GlobalVariable *V) {
     }
 }
 
-PointsToNode* PointsToNodeFactory::getDummyNode(const CallInst *CI) {
-    auto KV = dummyMap.find(CI);
-    if (KV != dummyMap.end())
-        return KV->second;
-    else {
-        PointsToNode *Node = new DummyPointsToNode(CI);
-        dummyMap.insert(std::make_pair(CI, Node));
-        return Node;
-    }
-}
-
 PointsToNode *PointsToNodeFactory::getIndexedNode(PointsToNode *A, const GEPOperator *GEP) {
     assert(GEP->hasAllConstantIndices());
     assert(!A->singlePointee() && "getIndexedNode cannot be used on nodes with a constant pointee.");

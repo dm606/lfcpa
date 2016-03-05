@@ -39,7 +39,7 @@ private:
 protected:
     StringRef name;
     static int nextId;
-    bool summaryNode = false, escapingNode = false, summaryNodePointees = false, fieldSensitive = true;
+    bool summaryNode = false, summaryNodePointees = false, fieldSensitive = true;
 
     PointsToNode(PointsToNodeKind K) : Kind(K) {}
 public:
@@ -65,15 +65,8 @@ public:
         assert(!singlePointee());
         summaryNode = true;
     }
-    inline void markAsEscaping() {
-        assert(!singlePointee());
-        escapingNode = true;
-    }
     virtual bool isAlwaysSummaryNode() const {
         return summaryNode;
-    }
-    virtual bool isEscaping() const {
-        return escapingNode;
     }
     virtual bool isSummaryNode(const CallString &) const {
         return summaryNode;
@@ -105,43 +98,6 @@ public:
     }
 };
 
-class DummyPointsToNode : public PointsToNode {
-    private:
-        std::string stdName;
-    public:
-        DummyPointsToNode(const CallInst *CI) : PointsToNode(PTNK_Dummy) {
-            stdName = "dummy:" + CI->getName().str();
-            name = StringRef(stdName);
-        }
-
-        bool hasPointerType() const override {
-            return true;
-        }
-
-        bool isAlwaysSummaryNode() const override {
-            // Dummy nodes are never considered to be summary nodes.
-            return false;
-        }
-
-        bool isEscaping() const override {
-            // Dummy nodes are never considered to escape.
-            return false;
-        }
-
-        bool isSummaryNode(const CallString &) const override {
-            // Dummy nodes are never considered to be summary nodes.
-            return false;
-        }
-
-        bool multipleStackFrames() const override {
-            return true;
-        }
-
-        static bool classof(const PointsToNode *N) {
-            return N->getKind() == PTNK_Dummy;
-        }
-};
-
 class UnknownPointsToNode : public PointsToNode {
     private:
         std::string stdName;
@@ -157,11 +113,6 @@ class UnknownPointsToNode : public PointsToNode {
 
         bool isSummaryNode(const CallString &) const override {
             // Unknown nodes are never considered to be summary nodes.
-            return false;
-        }
-
-        bool isEscaping() const override {
-            // Unknown nodes are never considered to escape.
             return false;
         }
 
