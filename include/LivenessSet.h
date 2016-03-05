@@ -73,6 +73,15 @@ class LivenessSet {
             }
             return true;
         }
+
+        void eraseNonSummaryNodes(const CallString &CS) {
+            for (auto I = s.begin(), E = s.end(); I != E; ) {
+                if (!(*I)->isSummaryNode(CS))
+                    I = s.erase(I);
+                else
+                    ++I;
+            }
+        }
     private:
         std::set<PointsToNode *> s;
 };

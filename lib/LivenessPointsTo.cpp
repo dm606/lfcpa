@@ -189,8 +189,8 @@ void subtractKillStoreInst(const CallString &CS, LivenessSet &Lin, PointsToNode 
         if (strongUpdate) {
             if (PointedTo == nullptr || isa<UnknownPointsToNode>(PointedTo)) {
                 // We have no information about what Ptr can point to, so kill
-                // everything.
-                Lin.clear();
+                // everything (except summary nodes).
+                Lin.eraseNonSummaryNodes(CS);
             }
             else {
                 // Ptr must point to PointedTo, so we can do a strong update
@@ -553,11 +553,17 @@ void insertNewPairsLoadInst(PointsToRelation &Aout, PointsToNode *Load, PointsTo
 }
 
 void insertNewPairsStoreInst(PointsToRelation &Aout, PointsToNode *Ptr, PointsToNode *Value, PointsToNode *Unknown, PointsToRelation *Ain, LivenessSet *Lout) {
+    bool insertUnknowns = false;
     if (!Ptr->isAggregate() && !Value->isAggregate()) {
-        for (auto P = Ain->pointee_begin(Ptr), PE = Ain->pointee_end(Ptr); P != PE; ++P)
+        for (auto P = Ain->pointee_begin(Ptr), PE = Ain->pointee_end(Ptr); P != PE; ++P) {
+            if (isa<UnknownPointsToNode>(Ptr)) {
+                insertUnknowns = true;
+                continue;
+            }
             if (Lout->find(*P) != Lout->end())
                 for (auto Q = Ain->pointee_begin(Value), QE = Ain->pointee_end(Value); Q != QE; ++Q)
                     Aout.insert(makePointsToPair(*P, *Q));
+        }
     }
     else {
         SmallVector<std::pair<IndexList, PointsToNode *>, 8> ptrPointees, valuePointees;
@@ -565,6 +571,10 @@ void insertNewPairsStoreInst(PointsToRelation &Aout, PointsToNode *Ptr, PointsTo
         unionPointeesWithDescendants(ptrPointees, Ain, l, Ptr);
         unionPointeesWithDescendants(valuePointees, Ain, l, Value);
         for (auto P : ptrPointees) {
+            if (isa<UnknownPointsToNode>(P.second)) {
+                insertUnknowns = true;
+                continue;
+            }
             if (Lout->find(P.second) != Lout->end()) {
                 for (auto Q : valuePointees) {
                     switch (matchIndexLists(P.first, Q.first)) {
@@ -587,6 +597,14 @@ void insertNewPairsStoreInst(PointsToRelation &Aout, PointsToNode *Ptr, PointsTo
                 }
             }
         }
+    }
+
+    if (insertUnknowns) {
+        // If Ptr points to ?, then we don't know what anything points to after
+        // this instruction. Normally Lout would be empty (everything is
+        // killed), but summary nodes cannot be killed.
+        for (auto I = Lout->begin(), E = Lout->end(); I != E; ++I)
+            Aout.insert({*I, Unknown});
     }
 }
 
@@ -1122,6 +1140,14 @@ void LivenessPointsTo::runOnFunction(Function *F, const CallString &CS, Intrapro
                         if (!NoAliasNode->isSummaryNode(CS))
                             n.erase(NoAliasNode);
                     }
+                    for (auto I = instruction_lout->begin(), E = instruction_lout->end(); I != E; ++I) {
+                        if ((*I)->isSummaryNode(CS)) {
+                            // We shouldn't allow the function call to kill this
+                            // node.
+                            n.insert(*I);
+                        }
+                    }
+
                     // If the two sets are the same, then no changes need to be
                     // made to lin, so don't do anything here. Otherwise, we
                     // need to update lin and add the predecessors of the
