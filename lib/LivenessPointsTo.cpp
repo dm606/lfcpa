@@ -526,8 +526,13 @@ void insertNewPairsLoadInst(PointsToRelation &Aout, PointsToNode *Load, PointsTo
                         case Shorter:
                             // If D.second is an aggregate points to pairs will
                             // be added for its children.
+                            // FIXME: Does the commmented code (or something
+                            // similar) need executing?
+                            (void)Unknown;
+                            /*
                             if (!D.second->isAggregate())
                                 Aout.insert({D.second, Unknown});
+                            */
                             break;
                         case Longer:
                         case NoMatch:
@@ -559,8 +564,13 @@ void insertNewPairsStoreInst(PointsToRelation &Aout, PointsToNode *Ptr, PointsTo
                             Aout.insert(makePointsToPair(P.second, Q.second));
                             break;
                         case Shorter:
-                            if (!Q.second->isAggregate())
+                            // FIXME: Does the commmented code (or something
+                            // similar) need executing?
+                            (void)Unknown;
+                            /*
+                            if (!P.second->isAggregate())
                                 Aout.insert({P.second, Unknown});
+                            */
                             break;
                         case Longer:
                         case NoMatch:
@@ -592,8 +602,13 @@ void insertNewPairsAssignment(PointsToRelation &Aout, PointsToNode *L, PointsToN
                             Aout.insert(makePointsToPair(D.second, P.second));
                             break;
                         case Shorter:
-                            if (!P.second->isAggregate())
+                            // FIXME: Does the commmented code (or something
+                            // similar) need executing?
+                            (void)Unknown;
+                            /*
+                            if (!D.second->isAggregate())
                                 Aout.insert({D.second, Unknown});
+                            */
                             break;
                         case Longer:
                         case NoMatch:
