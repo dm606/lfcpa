@@ -1244,7 +1244,7 @@ void LivenessPointsTo::runOnFunction(Function *F, const CallString &CS, Intrapro
                     for (PointsToNode *N : *instruction_lout)
                         s.insert(std::make_pair(N, factory.getUnknown()));
                 }
-                else {
+                else if (EverythingReachable == No) {
                     if (instruction_lout->find(CINode) != instruction_lout->end())
                         s.insert(std::make_pair(CINode, factory.getUnknown()));
                     for (PointsToNode *N : killable)
