@@ -243,6 +243,14 @@ void makeDescendantsLive(LivenessSet &Lin, PointsToNode *N) {
         makeDescendantsLive(Lin, D);
 }
 
+void makeDescendantsPointTo(PointsToRelation &Aout, PointsToNode *N, PointsToNode *Pointee, LivenessSet *Lout) {
+    if (Lout->find(N) != Lout->end())
+        Aout.insert(makePointsToPair(N, Pointee));
+
+    for (PointsToNode *D : N->children)
+        makeDescendantsPointTo(Aout, D, Pointee, Lout);
+}
+
 bool isPointeeLive(PointsToNode *N, LivenessSet *Lout, PointsToRelation *Ain) {
     for (auto P = Ain->pointee_begin(N), E = Ain->pointee_end(N); P != E; ++P)
         if (isLive(*P, Lout))
@@ -671,6 +679,10 @@ void LivenessPointsTo::insertNewPairs(PointsToRelation &Aout, Instruction *I, Po
             else
                 Aout.insert({N, factory.getIndexedNode(*P, GEP)});
         }
+    }
+    else if (AllocaInst *AI = dyn_cast<AllocaInst>(I)) {
+        PointsToNode *Alloca = factory.getNoAliasNode(AI);
+        makeDescendantsPointTo(Aout, Alloca, Unknown, Lout);
     }
 }
 
@@ -1215,6 +1227,12 @@ void LivenessPointsTo::runOnFunction(Function *F, const CallString &CS, Intrapro
                     for (auto P = instruction_ain->restriction_begin(instruction_lout), E = instruction_ain->restriction_end(instruction_lout); P != E; ++P)
                         if (killable.find(P->first) == killable.end())
                             s.insert(*P);
+                }
+                // If the function's return value has the noalias attribute
+                // then we don't know what the noalias points to.
+                if (CI->paramHasAttr(0, Attribute::NoAlias)) {
+                    PointsToNode *NoAliasNode = factory.getNoAliasNode(CI);
+                    makeDescendantsPointTo(s, NoAliasNode, factory.getUnknown(), instruction_lout);
                 }
 
                 if (s != *instruction_aout) {
