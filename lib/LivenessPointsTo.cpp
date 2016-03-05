@@ -216,13 +216,8 @@ void LivenessPointsTo::subtractKill(const CallString &CS,
                                     LivenessSet &Lin,
                                     Instruction *I,
                                     PointsToRelation *Ain) {
+    assert(!isa<CallInst>(I) && "CallInsts are analysed using a different part of the code.");
     PointsToNode *N = factory.getNode(I);
-
-    // Note that we don't kill GEPs where they are defined; instead, we kill
-    // them where the parent is defined, so that their points-to information is
-    // preserved for longer.
-    if (!N->isSummaryNode(CS) && !isa<GetElementPtrInst>(I))
-        killDescendants(Lin, N);
 
     if (StoreInst *SI = dyn_cast<StoreInst>(I)) {
         Value *Ptr = SI->getPointerOperand();
@@ -234,6 +229,26 @@ void LivenessPointsTo::subtractKill(const CallString &CS,
         if (!Alloca->isSummaryNode(CS))
             killDescendants(Lin, Alloca);
     }
+    else if (isa<GetElementPtrInst>(I) || isa<PHINode>(I) || isa<SelectInst>(I) || isa<ReturnInst>(I) || isa<UnreachableInst>(I) || isa<LoadInst>(I)) {
+        // These instructions only kill themselves.
+    }
+    else {
+        // All instructions kill themselves, but always killing the instruction
+        // can lead to incorrect results because not all instructions are
+        // supported: killing them will result in them having no pointees and
+        // therefore cause problems when two edges flow into the same basic
+        // block.
+        // Instead we simply don't kill them. This means that they will be live
+        // at the beginning of the function being analysed, and therefore will
+        // be made to point to ?.
+        return;
+    }
+
+    // Note that we don't kill GEPs where they are defined; instead, we kill
+    // them where the parent is defined, so that their points-to information is
+    // preserved for longer.
+    if (!N->isSummaryNode(CS) && !isa<GetElementPtrInst>(I))
+        killDescendants(Lin, N);
 }
 
 void makeDescendantsLive(LivenessSet &Lin, PointsToNode *N) {
@@ -1325,7 +1340,6 @@ void LivenessPointsTo::runOnFunction(Function *F, const CallString &CS, Intrapro
             else
                 worklist.insert(getPreviousInstruction(I));
         }
-
         if (worklist.empty() && createdSummaryNode) {
             createdSummaryNode = false;
             // We need to rerun on stores because they might need to treat a
