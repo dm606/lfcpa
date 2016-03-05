@@ -897,7 +897,7 @@ std::set<PointsToNode *> LivenessPointsTo::getReturnValues(const Function *F) {
 }
 
 
-LivenessSet LivenessPointsTo::removeActualArguments(CallInst *CI, LivenessSet *Lout, SmallVector<PointsToNode *, 8> &RemovedActualArguments) {
+LivenessSet LivenessPointsTo::computeFunctionExitLiveness(CallInst *CI, LivenessSet *Lout) {
     PointsToNode *CINode = factory.getNode(CI);
 
     LivenessSet L;
@@ -916,10 +916,8 @@ LivenessSet LivenessPointsTo::removeActualArguments(CallInst *CI, LivenessSet *L
     // FIXME: What about varargs?
     for (Value *V : CI->arg_operands()) {
         PointsToNode *ArgNode = factory.getNode(V);
-        if (L.find(ArgNode) != L.end()) {
+        if (L.find(ArgNode) != L.end())
             L.erase(ArgNode);
-            RemovedActualArguments.push_back(ArgNode);
-        }
     }
 
     return L;
@@ -960,7 +958,7 @@ PointsToRelation *LivenessPointsTo::replaceActualArgumentsWithFormal(Function *C
     return R;
 }
 
-LivenessSet LivenessPointsTo::replaceFormalArgumentsWithActual(const CallString &CS, Function *Callee, CallInst *CI, LivenessSet &CalledFunctionLin, SmallVector<PointsToNode *, 8> &RemovedActualArguments) {
+LivenessSet LivenessPointsTo::replaceFormalArgumentsWithActual(const CallString &CS, Function *Callee, CallInst *CI, LivenessSet &CalledFunctionLin, LivenessSet *Lout) {
     LivenessSet L;
     bool calleeInCallString = CI->getParent()->getParent() == Callee || CS.containsCallIn(Callee);
 
@@ -995,10 +993,15 @@ LivenessSet LivenessPointsTo::replaceFormalArgumentsWithActual(const CallString 
         ++Arg;
     }
 
-    // We also need to insert the actual arguments that are live after the
-    // call.
-    for (PointsToNode *N : RemovedActualArguments)
-        L.insert(N);
+    // The values of the arguments are not live at the end of the function
+    // because they cannot be modified by the function; they are inserted into
+    // Lin directly here.
+    // FIXME: What about varargs?
+    for (Value *V : CI->arg_operands()) {
+        PointsToNode *ArgNode = factory.getNode(V);
+        if (Lout->find(ArgNode) != Lout->end())
+            L.insert(ArgNode);
+    }
 
     return L;
 }
@@ -1112,37 +1115,13 @@ void LivenessPointsTo::runOnFunction(Function *F, const CallString &CS, Intrapro
             if (analysable) {
                 // The set of values that are returned from the function.
                 std::set<PointsToNode *> returnValues = getReturnValues(Called);
-                // Add to the list of calls made by the function for analysis later.
-                auto EntryPT = replaceActualArgumentsWithFormal(Called, CI, instruction_ain);
-                SmallVector<PointsToNode *, 8> RemovedActualArguments;
-                auto ExitL = removeActualArguments(CI, instruction_lout, RemovedActualArguments);
-                bool RVL = instruction_lout->find(CINode) != instruction_lout->end();
-
-                bool found = false;
-                for (auto I = Calls.begin(), E = Calls.end(); I != E; ++I) {
-                    CallInst *TupleCI;
-                    Function *TupleF;
-                    PointsToRelation *TuplePT;
-                    LivenessSet TupleL;
-                    bool TupleReturnValuesLive;
-                    std::tie(TupleCI, TupleF, TuplePT, TupleL, TupleReturnValuesLive) = *I;
-                    if (TupleCI == CI && TupleF == Called) {
-                        // Update the call with the new points-to and liveness
-                        // information.
-                        *I = std::make_tuple(CI, Called, EntryPT, ExitL, RVL);
-                        found = true;
-                        break;
-                    }
-                }
-                if (!found)
-                    Calls.push_back(std::make_tuple(CI, Called, EntryPT, ExitL, RVL));
 
                 std::pair<LivenessSet, PointsToRelation> calledFunctionResult;
                 if (getCalledFunctionResult(newCS, Called, calledFunctionResult)) {
                     auto calledFunctionLin = calledFunctionResult.first;
                     auto calledFunctionAout = calledFunctionResult.second;
 
-                    LivenessSet n = replaceFormalArgumentsWithActual(CS, Called, CI, calledFunctionLin, RemovedActualArguments);
+                    LivenessSet n = replaceFormalArgumentsWithActual(CS, Called, CI, calledFunctionLin, instruction_lout);
                     // The CallInst is killed by itself, and its value cannot be
                     // used by itself, so it is not live immediately before the
                     // call is executed.
@@ -1349,6 +1328,30 @@ void LivenessPointsTo::runOnFunction(Function *F, const CallString &CS, Intrapro
                     worklist.insert(&*I);
         }
     }
+
+    // Determine the boundary information to use when running the analysis on
+    // the called functions.
+    for (auto I = inst_begin(F), E = inst_end(F); I != E; ++I) {
+        if (CallInst *CI = dyn_cast<CallInst>(&*I)) {
+            PointsToNode *CINode = factory.getNode(CI);
+            CallString newCS = CS.addCallSite(&*I);
+            Function *Called = CI->getCalledFunction();
+
+            if (Called != nullptr && !Called->isDeclaration()) {
+                auto instruction_nonresult = nonresult.find(&*I);
+                assert (instruction_nonresult != nonresult.end());
+                auto instruction_ain = instruction_nonresult->second.second;
+                auto instruction_lout = instruction_nonresult->second.first;
+
+                // Add to the list of calls made by the function for analysis later.
+                auto EntryPT = replaceActualArgumentsWithFormal(Called, CI, instruction_ain);
+                auto ExitL = computeFunctionExitLiveness(CI, instruction_lout);
+                bool RVL = instruction_lout->find(CINode) != instruction_lout->end();
+
+                Calls.push_back(std::make_tuple(CI, Called, EntryPT, ExitL, RVL));
+            }
+        }
+    }
 }
 
 bool LivenessPointsTo::runOnFunctionAt(const CallString& CS,
@@ -1382,6 +1385,7 @@ bool LivenessPointsTo::runOnFunctionAt(const CallString& CS,
         // caller here for the same reason as above. If the information at a
         // callee changes, then they will rerun the analysis here.
         bool rerun = false;
+
         for (auto C : Calls) {
             CallInst *I;
             Function *F;

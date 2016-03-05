@@ -28,9 +28,9 @@ private:
     void insertReachableDeclaration(const CallString &, CallInst *, LivenessSet &, LivenessSet &, PointsToRelation *, YesNoMaybe &);
     bool getCalledFunctionResult(const CallString &, Function *, std::pair<LivenessSet, PointsToRelation>&);
     std::set<PointsToNode *> getReturnValues(const Function *);
-    LivenessSet removeActualArguments(CallInst *, LivenessSet *, SmallVector<PointsToNode *, 8> &);
+    LivenessSet computeFunctionExitLiveness(CallInst *, LivenessSet *);
     PointsToRelation *replaceActualArgumentsWithFormal(Function *, CallInst *, PointsToRelation *);
-    LivenessSet replaceFormalArgumentsWithActual(const CallString &CS, Function *, CallInst *, LivenessSet &, SmallVector<PointsToNode *, 8> &);
+    LivenessSet replaceFormalArgumentsWithActual(const CallString &CS, Function *, CallInst *, LivenessSet &, LivenessSet *);
     PointsToRelation replaceReturnValuesWithCallInst(CallInst *, PointsToRelation &, std::set<PointsToNode *> &, LivenessSet *);
     void runOnFunction(Function *, const CallString &, IntraproceduralPointsTo *, PointsToRelation *, LivenessSet &, bool, SmallVector<std::tuple<CallInst *, Function *, PointsToRelation *, LivenessSet, bool>, 8> &);
     bool runOnFunctionAt(const CallString &, Function *, PointsToRelation *, LivenessSet &, bool, bool);
