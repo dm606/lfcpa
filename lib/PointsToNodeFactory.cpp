@@ -148,10 +148,11 @@ PointsToNode* PointsToNodeFactory::getDummyNode(const CallInst *CI) {
 PointsToNode *PointsToNodeFactory::getIndexedNode(PointsToNode *A, const GEPOperator *GEP) {
     assert(GEP->hasAllConstantIndices());
     assert(!A->singlePointee() && "getIndexedNode cannot be used on nodes with a constant pointee.");
+    assert(GEP->getType()->isPointerTy());
     for (PointsToNode *Child : A->children)
         if (matchGEPNode(GEP, Child))
             return Child;
 
     // We create a new GEP node which has A as its parent.
-    return new GEPPointsToNode(A, GEP->getType(), GEP->idx_begin(), GEP->idx_end(), nullptr);
+    return new GEPPointsToNode(A, GEP->getType()->getPointerElementType(), GEP->idx_begin(), GEP->idx_end(), nullptr);
 }

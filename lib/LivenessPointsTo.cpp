@@ -521,16 +521,15 @@ void insertNewPairsLoadInst(PointsToRelation &Aout, PointsToNode *Load, PointsTo
                 for (auto P : p) {
                     switch (matchIndexLists(D.first, P.first)) {
                         case Exact:
-                            if (!D.second->isAggregate() || !P.second->isAggregate())
-                                Aout.insert(makePointsToPair(D.second, P.second));
+                            Aout.insert(makePointsToPair(D.second, P.second));
                             break;
-                        case Longer:
+                        case Shorter:
                             // If D.second is an aggregate points to pairs will
                             // be added for its children.
                             if (!D.second->isAggregate())
                                 Aout.insert({D.second, Unknown});
                             break;
-                        case Shorter:
+                        case Longer:
                         case NoMatch:
                             break;
                     }
@@ -557,14 +556,13 @@ void insertNewPairsStoreInst(PointsToRelation &Aout, PointsToNode *Ptr, PointsTo
                 for (auto Q : valuePointees) {
                     switch (matchIndexLists(P.first, Q.first)) {
                         case Exact:
-                            if (!P.second->isAggregate() || !Q.second->isAggregate())
-                                Aout.insert(makePointsToPair(P.second, Q.second));
+                            Aout.insert(makePointsToPair(P.second, Q.second));
                             break;
-                        case Longer:
+                        case Shorter:
                             if (!Q.second->isAggregate())
                                 Aout.insert({P.second, Unknown});
                             break;
-                        case Shorter:
+                        case Longer:
                         case NoMatch:
                             break;
                     }
@@ -591,14 +589,13 @@ void insertNewPairsAssignment(PointsToRelation &Aout, PointsToNode *L, PointsToN
                 for (auto P : pointees) {
                     switch (matchIndexLists(D.first, P.first)) {
                         case Exact:
-                            if (!D.second->isAggregate() || !P.second->isAggregate())
-                                Aout.insert(makePointsToPair(D.second, P.second));
+                            Aout.insert(makePointsToPair(D.second, P.second));
                             break;
-                        case Longer:
+                        case Shorter:
                             if (!P.second->isAggregate())
                                 Aout.insert({D.second, Unknown});
                             break;
-                        case Shorter:
+                        case Longer:
                         case NoMatch:
                             break;
                     }
