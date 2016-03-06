@@ -25,6 +25,8 @@ private:
     void unionRef(LivenessSet &, Instruction *, LivenessSet *, PointsToRelation *);
     void computeLout(Instruction *, LivenessSet * , IntraproceduralPointsTo *);
     bool computeAin(Instruction *, Function *, PointsToRelation *, LivenessSet *, IntraproceduralPointsTo *, bool InsertAtFirstInstruction);
+    bool computeLin(const CallString &, Instruction *, PointsToRelation *, LivenessSet *, LivenessSet *);
+    bool computeAout(const CallString &, Instruction *, PointsToRelation *, PointsToRelation *, LivenessSet *);
     void insertReachableDeclaration(const CallString &, CallInst *, LivenessSet &, LivenessSet &, PointsToRelation *, YesNoMaybe &);
     bool getCalledFunctionResult(const CallString &, Function *, std::pair<LivenessSet, PointsToRelation>&);
     std::set<PointsToNode *> getReturnValues(const Function *);

@@ -812,6 +812,230 @@ bool LivenessPointsTo::computeAin(Instruction *I, Function *F, PointsToRelation 
     return false;
 }
 
+bool LivenessPointsTo::computeLin(const CallString &CS, Instruction *I, PointsToRelation *Ain, LivenessSet *Lin, LivenessSet *Lout) {
+    if (CallInst *CI = dyn_cast<CallInst>(I)) {
+        PointsToNode *CINode = factory.getNode(CI);
+        CallString newCS = CS.addCallSite(I);
+        Function *Called = CI->getCalledFunction();
+
+        bool analysable = Called != nullptr && !Called->isDeclaration();
+        if (analysable) {
+            // The set of values that are returned from the function.
+            std::set<PointsToNode *> returnValues = getReturnValues(Called);
+
+            std::pair<LivenessSet, PointsToRelation> calledFunctionResult;
+            if (getCalledFunctionResult(newCS, Called, calledFunctionResult)) {
+                auto calledFunctionLin = calledFunctionResult.first;
+                auto calledFunctionAout = calledFunctionResult.second;
+
+                LivenessSet n = replaceFormalArgumentsWithActual(CS, Called, CI, calledFunctionLin, Lout);
+                // The CallInst is killed by itself, and its value cannot be
+                // used by itself, so it is not live immediately before the
+                // call is executed.
+                n.erase(CINode);
+                // If the function's return value has the noalias attribute
+                // and the noalias node is not a summary node, then it can
+                // be killed here.
+                if (CI->paramHasAttr(0, Attribute::NoAlias)) {
+                    PointsToNode *NoAliasNode = factory.getNoAliasNode(CI);
+                    if (!NoAliasNode->isSummaryNode(CS))
+                        n.erase(NoAliasNode);
+                }
+                for (auto I = Lout->begin(), E = Lout->end(); I != E; ++I) {
+                    if ((*I)->isSummaryNode(CS)) {
+                        // We shouldn't allow the function call to kill this
+                        // node.
+                        n.insert(*I);
+                    }
+                }
+
+                // If the two sets are the same, then no changes need to be
+                // made to lin, so don't do anything here. Otherwise, we
+                // need to update lin and add the predecessors of the
+                // current instruction to the worklist.
+                if (n != *Lin) {
+                    Lin->clear();
+                    Lin->insertAll(n);
+                    return true;
+                }
+                else
+                    return false;
+            }
+            else
+                return false;
+        }
+        else {
+            // We reach this point if we have a declaration or function
+            // pointer. Just assume the worst case -- the function may
+            // invalidate or use anything that it has access to.
+
+            // Compute lin for the current instruction. This consists of
+            // everything that is live after the call, plus the arguments,
+            // minus the return value.
+
+            // We assume that the function will use the value of anything that is
+            // reachable from it, and will kill anything that is reachable
+            // from it.
+            YesNoMaybe EverythingReachable = No;
+            LivenessSet reachable, killable;
+            insertReachableDeclaration(CS, CI, reachable, killable, Ain, EverythingReachable);
+
+            LivenessSet n = *Lout;
+
+            if (EverythingReachable == Yes) {
+                // If everything is reachable, then everything might be
+                // ref'd, so insert as much as possible into n.
+                n.insertAll(*Lin);
+                Ain->insertEverythingInto(n);
+            }
+            else {
+                // If only the nodes in reachable are reachable, then only
+                // these should be made live. If we don't yet know whether
+                // anything will be reachable or not, we must be
+                // conservative for monotonicity.
+                n.insertAll(reachable);
+            }
+            // The return value is never live before the call.
+            n.erase(CINode);
+            // If the function's return value has the noalias attribute
+            // and the noalias node is not a summary node, then it can
+            // be killed here.
+            if (CI->paramHasAttr(0, Attribute::NoAlias)) {
+                PointsToNode *NoAliasNode = factory.getNoAliasNode(CI);
+                if (!NoAliasNode->isSummaryNode(CS))
+                    n.erase(NoAliasNode);
+            }
+
+            // If the two sets are the same, then no changes need to be made to lin,
+            // so don't do anything here. Otherwise, we need to update lin and add
+            // the predecessors of the current instruction to the worklist.
+            if (n != *Lin) {
+                Lin->clear();
+                Lin->insertAll(n);
+                return true;
+            }
+            else
+                return false;
+        }
+    }
+    else {
+        // Compute lin for the current instruction.
+        LivenessSet n;
+        n.insertAll(*Lout);
+        subtractKill(CS, n, I, Ain);
+        unionRef(n, I, Lout, Ain);
+        // If the two sets are the same, then no changes need to be made to lin,
+        // so don't do anything here. Otherwise, we need to update lin and add
+        // the predecessors of the current instruction to the worklist.
+        if (n != *Lin) {
+            Lin->clear();
+            Lin->insertAll(n);
+            return true;
+        }
+        else
+            return false;
+    }
+}
+
+bool LivenessPointsTo::computeAout(const CallString &CS, Instruction *I, PointsToRelation *Ain, PointsToRelation *Aout, LivenessSet *Lout) {
+    if (CallInst *CI = dyn_cast<CallInst>(I)) {
+        PointsToNode *CINode = factory.getNode(CI);
+        CallString newCS = CS.addCallSite(I);
+        Function *Called = CI->getCalledFunction();
+
+        bool analysable = Called != nullptr && !Called->isDeclaration();
+        if (analysable) {
+            // The set of values that are returned from the function.
+            std::set<PointsToNode *> returnValues = getReturnValues(Called);
+
+            std::pair<LivenessSet, PointsToRelation> calledFunctionResult;
+            if (getCalledFunctionResult(newCS, Called, calledFunctionResult)) {
+                auto calledFunctionLin = calledFunctionResult.first;
+                auto calledFunctionAout = calledFunctionResult.second;
+
+                PointsToRelation s = replaceReturnValuesWithCallInst(CI, calledFunctionAout, returnValues, Lout);
+                for (auto I = Ain->begin(), E = Ain->end(); I != E; ++I) {
+                    if (I->first->isSummaryNode(CS)) {
+                        // We shouldn't allow the function call to remove
+                        // this pair. (Actually it is never *removed*, but
+                        // it just isn't discovered in recursive functions).
+                        s.insert(*I);
+                    }
+                }
+                if (s != *Aout) {
+                    Aout->clear();
+                    Aout->insertAll(s);
+                    return true;
+                }
+                else
+                    return false;
+            }
+            else
+                return false;
+        }
+        else {
+            // Compute aout for the current instruction. Anything that can
+            // be modified by the function (including the return value
+            // unless it has the noalias attribute) must point to unknown;
+            // anything else points to the same thing that it does in ain.
+            // If a node that has no pointees is reachable, we can't insert
+            // pairs of the form x-->? unless we know that x is definitely
+            // reachable, because we might discover what the node points to
+            // later.
+            LivenessSet reachable = LivenessSet();
+            LivenessSet killable = LivenessSet();
+            YesNoMaybe EverythingReachable = No;
+            insertReachableDeclaration(CS, CI, reachable, killable, Ain, EverythingReachable);
+            if (!CINode->singlePointee())
+                reachable.insert(CINode);
+            PointsToRelation s;
+            if (EverythingReachable == Yes) {
+                for (PointsToNode *N : *Lout)
+                    s.insert(std::make_pair(N, factory.getUnknown()));
+            }
+            else if (EverythingReachable == No) {
+                if (Lout->find(CINode) != Lout->end())
+                    s.insert(std::make_pair(CINode, factory.getUnknown()));
+                for (PointsToNode *N : killable)
+                    if (Lout->find(N) != Lout->end())
+                        s.insert(std::make_pair(N, factory.getUnknown()));
+                for (auto P = Ain->restriction_begin(Lout), E = Ain->restriction_end(Lout); P != E; ++P)
+                    if (killable.find(P->first) == killable.end())
+                        s.insert(*P);
+            }
+            // If the function's return value has the noalias attribute
+            // then we don't know what the noalias points to.
+            if (CI->paramHasAttr(0, Attribute::NoAlias)) {
+                PointsToNode *NoAliasNode = factory.getNoAliasNode(CI);
+                makeDescendantsPointTo(s, NoAliasNode, factory.getUnknown(), Lout);
+            }
+
+            if (s != *Aout) {
+                Aout->clear();
+                Aout->insertAll(s);
+                return true;
+            }
+            else
+                return false;
+        }
+    }
+    else {
+        PointsToRelation s;
+        // Compute aout for the current instruction.
+        LivenessSet notKilled = *Lout;
+        subtractKill(CS, notKilled, I, Ain);
+        s.unionRelationRestriction(Ain, &notKilled);
+        insertNewPairs(s, I, Ain, Lout);
+        if (s != *Aout) {
+            Aout->clear();
+            Aout->insertAll(s);
+            return true;
+        }
+        else
+            return false;
+    }
+}
+
 void LivenessPointsTo::insertReachableDeclaration(const CallString &CS, CallInst *CI, LivenessSet &Reachable, LivenessSet &Killable, PointsToRelation *Ain, YesNoMaybe &EverythingReachable) {
     std::set<PointsToNode *> seen;
     // FIXME: Can globals be accessed by the function?
@@ -1099,196 +1323,10 @@ void LivenessPointsTo::runOnFunction(Function *F, const CallString &CS, Intrapro
         auto instruction_lin = instruction_result->second.first,
              instruction_lout = instruction_nonresult->second.first;
 
-        bool addPredsToWorklist = false,
-             addSuccsToWorklist = false,
-             addCurrToWorklist = false;
-
         computeLout(I, instruction_lout, Result);
-        addCurrToWorklist |= computeAin(I, F, instruction_ain, instruction_lin, Result, CS.isEmpty());
-
-        if (CallInst *CI = dyn_cast<CallInst>(I)) {
-            PointsToNode *CINode = factory.getNode(CI);
-            CallString newCS = CS.addCallSite(I);
-            Function *Called = CI->getCalledFunction();
-
-            bool analysable = Called != nullptr && !Called->isDeclaration();
-            if (analysable) {
-                // The set of values that are returned from the function.
-                std::set<PointsToNode *> returnValues = getReturnValues(Called);
-
-                std::pair<LivenessSet, PointsToRelation> calledFunctionResult;
-                if (getCalledFunctionResult(newCS, Called, calledFunctionResult)) {
-                    auto calledFunctionLin = calledFunctionResult.first;
-                    auto calledFunctionAout = calledFunctionResult.second;
-
-                    LivenessSet n = replaceFormalArgumentsWithActual(CS, Called, CI, calledFunctionLin, instruction_lout);
-                    // The CallInst is killed by itself, and its value cannot be
-                    // used by itself, so it is not live immediately before the
-                    // call is executed.
-                    n.erase(CINode);
-                    // If the function's return value has the noalias attribute
-                    // and the noalias node is not a summary node, then it can
-                    // be killed here.
-                    if (CI->paramHasAttr(0, Attribute::NoAlias)) {
-                        PointsToNode *NoAliasNode = factory.getNoAliasNode(CI);
-                        if (!NoAliasNode->isSummaryNode(CS))
-                            n.erase(NoAliasNode);
-                    }
-                    for (auto I = instruction_lout->begin(), E = instruction_lout->end(); I != E; ++I) {
-                        if ((*I)->isSummaryNode(CS)) {
-                            // We shouldn't allow the function call to kill this
-                            // node.
-                            n.insert(*I);
-                        }
-                    }
-
-                    // If the two sets are the same, then no changes need to be
-                    // made to lin, so don't do anything here. Otherwise, we
-                    // need to update lin and add the predecessors of the
-                    // current instruction to the worklist.
-                    if (n != *instruction_lin) {
-                        instruction_lin->clear();
-                        instruction_lin->insertAll(n);
-                        addPredsToWorklist = true;
-                    }
-
-                    PointsToRelation s = replaceReturnValuesWithCallInst(CI, calledFunctionAout, returnValues, instruction_lout);
-                    for (auto I = instruction_ain->begin(), E = instruction_ain->end(); I != E; ++I) {
-                        if (I->first->isSummaryNode(CS)) {
-                            // We shouldn't allow the function call to remove
-                            // this pair. (Actually it is never *removed*, but
-                            // it just isn't discovered in recursive functions).
-                            s.insert(*I);
-                        }
-                    }
-                    if (s != *instruction_aout) {
-                        instruction_aout->clear();
-                        instruction_aout->insertAll(s);
-                        addSuccsToWorklist = true;
-                    }
-                }
-            }
-
-            if (!analysable) {
-                // We reach this point if we have a declaration or function
-                // pointer. Just assume the worst case -- the function may
-                // invalidate or use anything that it has access to.
-
-                // Compute lin for the current instruction. This consists of
-                // everything that is live after the call, plus the arguments,
-                // minus the return value.
-
-                // We assume that the function will use the value of anything that is
-                // reachable from it, and will kill anything that is reachable
-                // from it.
-                YesNoMaybe EverythingReachable = No;
-                LivenessSet reachable, killable;
-                insertReachableDeclaration(CS, CI, reachable, killable, instruction_ain, EverythingReachable);
-
-                LivenessSet n = *instruction_lout;
-
-                if (EverythingReachable == Yes) {
-                    // If everything is reachable, then everything might be
-                    // ref'd, so insert as much as possible into n.
-                    n.insertAll(*instruction_lin);
-                    instruction_ain->insertEverythingInto(n);
-                }
-                else {
-                    // If only the nodes in reachable are reachable, then only
-                    // these should be made live. If we don't yet know whether
-                    // anything will be reachable or not, we must be
-                    // conservative for monotonicity.
-                    n.insertAll(reachable);
-                }
-                // The return value is never live before the call.
-                n.erase(CINode);
-                // If the function's return value has the noalias attribute
-                // and the noalias node is not a summary node, then it can
-                // be killed here.
-                if (CI->paramHasAttr(0, Attribute::NoAlias)) {
-                    PointsToNode *NoAliasNode = factory.getNoAliasNode(CI);
-                    if (!NoAliasNode->isSummaryNode(CS))
-                        n.erase(NoAliasNode);
-                }
-
-                // If the two sets are the same, then no changes need to be made to lin,
-                // so don't do anything here. Otherwise, we need to update lin and add
-                // the predecessors of the current instruction to the worklist.
-                if (n != *instruction_lin) {
-                    instruction_lin->clear();
-                    instruction_lin->insertAll(n);
-                    addPredsToWorklist = true;
-                }
-
-                // Compute aout for the current instruction. Anything that can
-                // be modified by the function (including the return value
-                // unless it has the noalias attribute) must point to unknown;
-                // anything else points to the same thing that it does in ain.
-                // If a node that has no pointees is reachable, we can't insert
-                // pairs of the form x-->? unless we know that x is definitely
-                // reachable, because we might discover what the node points to
-                // later.
-                reachable = LivenessSet();
-                killable = LivenessSet();
-                insertReachableDeclaration(CS, CI, reachable, killable, instruction_ain, EverythingReachable);
-                if (!CINode->singlePointee())
-                    reachable.insert(CINode);
-                PointsToRelation s;
-                if (EverythingReachable == Yes) {
-                    for (PointsToNode *N : *instruction_lout)
-                        s.insert(std::make_pair(N, factory.getUnknown()));
-                }
-                else if (EverythingReachable == No) {
-                    if (instruction_lout->find(CINode) != instruction_lout->end())
-                        s.insert(std::make_pair(CINode, factory.getUnknown()));
-                    for (PointsToNode *N : killable)
-                        if (instruction_lout->find(N) != instruction_lout->end())
-                            s.insert(std::make_pair(N, factory.getUnknown()));
-                    for (auto P = instruction_ain->restriction_begin(instruction_lout), E = instruction_ain->restriction_end(instruction_lout); P != E; ++P)
-                        if (killable.find(P->first) == killable.end())
-                            s.insert(*P);
-                }
-                // If the function's return value has the noalias attribute
-                // then we don't know what the noalias points to.
-                if (CI->paramHasAttr(0, Attribute::NoAlias)) {
-                    PointsToNode *NoAliasNode = factory.getNoAliasNode(CI);
-                    makeDescendantsPointTo(s, NoAliasNode, factory.getUnknown(), instruction_lout);
-                }
-
-                if (s != *instruction_aout) {
-                    instruction_aout->clear();
-                    instruction_aout->insertAll(s);
-                    addSuccsToWorklist = true;
-                }
-            }
-        }
-        else {
-            // Compute lin for the current instruction.
-            LivenessSet n;
-            n.insertAll(*instruction_lout);
-            subtractKill(CS, n, I, instruction_ain);
-            unionRef(n, I, instruction_lout, instruction_ain);
-            // If the two sets are the same, then no changes need to be made to lin,
-            // so don't do anything here. Otherwise, we need to update lin and add
-            // the predecessors of the current instruction to the worklist.
-            if (n != *instruction_lin) {
-                instruction_lin->clear();
-                instruction_lin->insertAll(n);
-                addPredsToWorklist = true;
-            }
-
-            PointsToRelation s;
-            // Compute aout for the current instruction.
-            LivenessSet notKilled = *instruction_lout;
-            subtractKill(CS, notKilled, I, instruction_ain);
-            s.unionRelationRestriction(instruction_ain, &notKilled);
-            insertNewPairs(s, I, instruction_ain, instruction_lout);
-            if (s != *instruction_aout) {
-                instruction_aout->clear();
-                instruction_aout->insertAll(s);
-                addSuccsToWorklist = true;
-            }
-        }
+        bool addPredsToWorklist = computeLin(CS, I, instruction_ain, instruction_lin, instruction_lout);
+        bool addCurrToWorklist = computeAin(I, F, instruction_ain, instruction_lin, Result, CS.isEmpty());
+        bool addSuccsToWorklist = computeAout(CS, I, instruction_ain, instruction_aout, instruction_lout);
 
         // Add succs to worklist
         if (addSuccsToWorklist) {
@@ -1319,6 +1357,7 @@ void LivenessPointsTo::runOnFunction(Function *F, const CallString &CS, Intrapro
             else
                 worklist.insert(getPreviousInstruction(I));
         }
+
         if (worklist.empty() && createdSummaryNode) {
             createdSummaryNode = false;
             // We need to rerun on stores because they might need to treat a
