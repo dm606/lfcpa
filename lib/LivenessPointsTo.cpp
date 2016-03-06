@@ -823,43 +823,39 @@ bool LivenessPointsTo::computeLin(const CallString &CS, Instruction *I, PointsTo
             // The set of values that are returned from the function.
             std::set<PointsToNode *> returnValues = getReturnValues(Called);
 
-            std::pair<LivenessSet, PointsToRelation> calledFunctionResult;
-            if (getCalledFunctionResult(newCS, Called, calledFunctionResult)) {
-                auto calledFunctionLin = calledFunctionResult.first;
-                auto calledFunctionAout = calledFunctionResult.second;
+            std::pair<LivenessSet, PointsToRelation> calledFunctionResult = getCalledFunctionResult(newCS, Called);
+            auto calledFunctionLin = calledFunctionResult.first;
+            auto calledFunctionAout = calledFunctionResult.second;
 
-                LivenessSet n = replaceFormalArgumentsWithActual(CS, Called, CI, calledFunctionLin, Lout);
-                // The CallInst is killed by itself, and its value cannot be
-                // used by itself, so it is not live immediately before the
-                // call is executed.
-                n.erase(CINode);
-                // If the function's return value has the noalias attribute
-                // and the noalias node is not a summary node, then it can
-                // be killed here.
-                if (CI->paramHasAttr(0, Attribute::NoAlias)) {
-                    PointsToNode *NoAliasNode = factory.getNoAliasNode(CI);
-                    if (!NoAliasNode->isSummaryNode(CS))
-                        n.erase(NoAliasNode);
+            LivenessSet n = replaceFormalArgumentsWithActual(CS, Called, CI, calledFunctionLin, Lout);
+            // The CallInst is killed by itself, and its value cannot be
+            // used by itself, so it is not live immediately before the
+            // call is executed.
+            n.erase(CINode);
+            // If the function's return value has the noalias attribute
+            // and the noalias node is not a summary node, then it can
+            // be killed here.
+            if (CI->paramHasAttr(0, Attribute::NoAlias)) {
+                PointsToNode *NoAliasNode = factory.getNoAliasNode(CI);
+                if (!NoAliasNode->isSummaryNode(CS))
+                  n.erase(NoAliasNode);
+            }
+            for (auto I = Lout->begin(), E = Lout->end(); I != E; ++I) {
+                if ((*I)->isSummaryNode(CS)) {
+                    // We shouldn't allow the function call to kill this
+                    // node.
+                    n.insert(*I);
                 }
-                for (auto I = Lout->begin(), E = Lout->end(); I != E; ++I) {
-                    if ((*I)->isSummaryNode(CS)) {
-                        // We shouldn't allow the function call to kill this
-                        // node.
-                        n.insert(*I);
-                    }
-                }
+            }
 
-                // If the two sets are the same, then no changes need to be
-                // made to lin, so don't do anything here. Otherwise, we
-                // need to update lin and add the predecessors of the
-                // current instruction to the worklist.
-                if (n != *Lin) {
-                    Lin->clear();
-                    Lin->insertAll(n);
-                    return true;
-                }
-                else
-                    return false;
+            // If the two sets are the same, then no changes need to be
+            // made to lin, so don't do anything here. Otherwise, we
+            // need to update lin and add the predecessors of the
+            // current instruction to the worklist.
+            if (n != *Lin) {
+                Lin->clear();
+                Lin->insertAll(n);
+                return true;
             }
             else
                 return false;
@@ -948,27 +944,23 @@ bool LivenessPointsTo::computeAout(const CallString &CS, Instruction *I, PointsT
             // The set of values that are returned from the function.
             std::set<PointsToNode *> returnValues = getReturnValues(Called);
 
-            std::pair<LivenessSet, PointsToRelation> calledFunctionResult;
-            if (getCalledFunctionResult(newCS, Called, calledFunctionResult)) {
-                auto calledFunctionLin = calledFunctionResult.first;
-                auto calledFunctionAout = calledFunctionResult.second;
+            std::pair<LivenessSet, PointsToRelation> calledFunctionResult = getCalledFunctionResult(newCS, Called);
+            auto calledFunctionLin = calledFunctionResult.first;
+            auto calledFunctionAout = calledFunctionResult.second;
 
-                PointsToRelation s = replaceReturnValuesWithCallInst(CI, calledFunctionAout, returnValues, Lout);
-                for (auto I = Ain->begin(), E = Ain->end(); I != E; ++I) {
-                    if (I->first->isSummaryNode(CS)) {
-                        // We shouldn't allow the function call to remove
-                        // this pair. (Actually it is never *removed*, but
-                        // it just isn't discovered in recursive functions).
-                        s.insert(*I);
-                    }
+            PointsToRelation s = replaceReturnValuesWithCallInst(CI, calledFunctionAout, returnValues, Lout);
+            for (auto I = Ain->begin(), E = Ain->end(); I != E; ++I) {
+                if (I->first->isSummaryNode(CS)) {
+                    // We shouldn't allow the function call to remove
+                    // this pair. (Actually it is never *removed*, but
+                    // it just isn't discovered in recursive functions).
+                     s.insert(*I);
                 }
-                if (s != *Aout) {
-                    Aout->clear();
-                    Aout->insertAll(s);
-                    return true;
-                }
-                else
-                    return false;
+            }
+            if (s != *Aout) {
+                Aout->clear();
+                Aout->insertAll(s);
+                return true;
             }
             else
                 return false;
@@ -1074,18 +1066,19 @@ void LivenessPointsTo::insertReachableDeclaration(const CallString &CS, CallInst
         insertReachable(factory.getNode(V));
 }
 
-bool LivenessPointsTo::getCalledFunctionResult(const CallString &CS, Function *F, std::pair<LivenessSet, PointsToRelation>& Result) {
+std::pair<LivenessSet, PointsToRelation> LivenessPointsTo::getCalledFunctionResult(const CallString &CS, Function *F) {
+    std::pair<LivenessSet, PointsToRelation> Result;
     // If there is an exact match for F and CS in data, then this should be used.
     // Otherwise, we should use the data that is associated with the function
     // and longest possible prefix of the call string. If there is no data for F
     // at all, just return false.
 
     if (!data.hasDataForFunction(F))
-        return false;
+        return Result;
 
     IntraproceduralPointsTo *PT = data.getAtLongestPrefix(F, CS);
     if (PT == nullptr)
-        return false;
+        return Result;
     auto FirstInst = inst_begin(F);
     assert(FirstInst != inst_end(F));
     auto I = PT->find(&*FirstInst);
@@ -1105,7 +1098,7 @@ bool LivenessPointsTo::getCalledFunctionResult(const CallString &CS, Function *F
     }
     Result.second = aout;
 
-    return true;
+    return Result;
 }
 
 std::set<PointsToNode *> LivenessPointsTo::getReturnValues(const Function *F) {
@@ -1241,6 +1234,14 @@ PointsToRelation LivenessPointsTo::replaceReturnValuesWithCallInst(CallInst *CI,
         }
         else if (Lout->find(I->first) != Lout->end())
             R.insert(*I);
+    }
+    if (CINodeLive) {
+        for (PointsToNode *N : ReturnValues) {
+            if (N->singlePointee()) {
+                // These nodes will not be seen in the previous loop.
+                R.insert(makePointsToPair(CINode, N->getSinglePointee()));
+            }
+        }
     }
     return R;
 }

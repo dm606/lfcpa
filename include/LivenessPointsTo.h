@@ -28,7 +28,7 @@ private:
     bool computeLin(const CallString &, Instruction *, PointsToRelation *, LivenessSet *, LivenessSet *);
     bool computeAout(const CallString &, Instruction *, PointsToRelation *, PointsToRelation *, LivenessSet *);
     void insertReachableDeclaration(const CallString &, CallInst *, LivenessSet &, LivenessSet &, PointsToRelation *, YesNoMaybe &);
-    bool getCalledFunctionResult(const CallString &, Function *, std::pair<LivenessSet, PointsToRelation>&);
+    std::pair<LivenessSet, PointsToRelation> getCalledFunctionResult(const CallString &, Function *);
     std::set<PointsToNode *> getReturnValues(const Function *);
     LivenessSet computeFunctionExitLiveness(CallInst *, LivenessSet *);
     PointsToRelation *replaceActualArgumentsWithFormal(Function *, CallInst *, PointsToRelation *);
