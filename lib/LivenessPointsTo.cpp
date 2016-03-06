@@ -1324,8 +1324,17 @@ void LivenessPointsTo::runOnFunction(Function *F, const CallString &CS, Intrapro
              instruction_lout = instruction_nonresult->second.first;
 
         computeLout(I, instruction_lout, Result);
+        // Lin depends on Lout, so this call needs to happen after computeLout
+        // (or the current instruction should be added to the worklist when
+        // computeLout returns true).
         bool addPredsToWorklist = computeLin(CS, I, instruction_ain, instruction_lin, instruction_lout);
+        // Ain depends on Lin, so this call needs to happen after computeLin
+        // (or the current instruction should be added to the worklist when
+        // computeLin returns true).
         bool addCurrToWorklist = computeAin(I, F, instruction_ain, instruction_lin, Result, CS.isEmpty());
+        // Aout depends on Lout, so this call needs to happen after computeLout
+        // (or the current instruction should be added to the worklist when
+        // computeLout returns true).
         bool addSuccsToWorklist = computeAout(CS, I, instruction_ain, instruction_aout, instruction_lout);
 
         // Add succs to worklist
