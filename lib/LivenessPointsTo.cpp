@@ -848,6 +848,10 @@ bool LivenessPointsTo::computeLin(const CallString &CS, Instruction *I, PointsTo
                 }
             }
 
+            // The function is live.
+            PointsToNode *CalledValue = factory.getNode(CI->getCalledValue());
+            makeDescendantsLive(n, CalledValue);
+
             // If the two sets are the same, then no changes need to be
             // made to lin, so don't do anything here. Otherwise, we
             // need to update lin and add the predecessors of the
@@ -901,6 +905,10 @@ bool LivenessPointsTo::computeLin(const CallString &CS, Instruction *I, PointsTo
                 if (!NoAliasNode->isSummaryNode(CS))
                     n.erase(NoAliasNode);
             }
+
+            // The function is live.
+            PointsToNode *CalledValue = factory.getNode(CI->getCalledValue());
+            makeDescendantsLive(n, CalledValue);
 
             // If the two sets are the same, then no changes need to be made to lin,
             // so don't do anything here. Otherwise, we need to update lin and add

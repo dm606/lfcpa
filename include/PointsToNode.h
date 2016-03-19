@@ -5,7 +5,7 @@
 
 #include "llvm/ADT/StringRef.h"
 #include "llvm/IR/Constants.h"
-#include "llvm/IR/GlobalVariable.h"
+#include "llvm/IR/GlobalObject.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/Value.h"
 #include "llvm/IR/Operator.h"
@@ -159,7 +159,7 @@ class GlobalPointsToNode : public PointsToNode {
         std::string stdName;
         bool isPointer;
     public:
-        GlobalPointsToNode(const GlobalVariable *G) : PointsToNode(PTNK_Global) {
+        GlobalPointsToNode(const GlobalObject *G) : PointsToNode(PTNK_Global) {
            stdName = "global:" + G->getName().str();
            name = StringRef(stdName);
            isPointer = G->getValueType()->isPointerTy();

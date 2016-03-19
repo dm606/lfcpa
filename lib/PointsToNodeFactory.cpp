@@ -85,7 +85,7 @@ PointsToNode* PointsToNodeFactory::getNode(const Value *V) {
         }
         else {
             PointsToNode *Pointee = nullptr;
-            if (const GlobalVariable *G = dyn_cast<GlobalVariable>(V))
+            if (const GlobalObject *G = dyn_cast<GlobalObject>(V))
                 Pointee = getGlobalNode(G);
             else if (const AllocaInst *AI = dyn_cast<AllocaInst>(V))
                 Pointee = getNoAliasNode(AI);
@@ -123,7 +123,7 @@ PointsToNode* PointsToNodeFactory::getNoAliasNode(const CallInst *I) {
     }
 }
 
-PointsToNode* PointsToNodeFactory::getGlobalNode(const GlobalVariable *V) {
+PointsToNode* PointsToNodeFactory::getGlobalNode(const GlobalObject *V) {
     auto KV = globalMap.find(V);
     if (KV != globalMap.end())
         return KV->second;

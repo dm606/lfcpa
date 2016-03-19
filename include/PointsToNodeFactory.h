@@ -11,7 +11,7 @@ class PointsToNodeFactory {
     private:
         DenseMap<const Value *, PointsToNode *> map;
         DenseMap<const Value *, PointsToNode *> noAliasMap;
-        DenseMap<const GlobalVariable *, PointsToNode *> globalMap;
+        DenseMap<const GlobalObject *, PointsToNode *> globalMap;
         UnknownPointsToNode unknown;
         bool matchGEPNode(const GEPOperator *, const PointsToNode *) const;
         PointsToNode *getGEPNode(const GEPOperator *, const Type *Type, PointsToNode *, PointsToNode *) const;
@@ -20,7 +20,7 @@ class PointsToNodeFactory {
         PointsToNode *getNode(const Value *);
         PointsToNode *getNoAliasNode(const AllocaInst *);
         PointsToNode *getNoAliasNode(const CallInst *);
-        PointsToNode *getGlobalNode(const GlobalVariable *);
+        PointsToNode *getGlobalNode(const GlobalObject *);
         PointsToNode *getIndexedNode(PointsToNode *, const GEPOperator *);
 };
 
