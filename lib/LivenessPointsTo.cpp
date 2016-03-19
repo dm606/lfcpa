@@ -943,6 +943,12 @@ bool LivenessPointsTo::computeLin(const CallString &CS, Instruction *I, PointsTo
 
 bool LivenessPointsTo::computeAout(const CallString &CS, Instruction *I, PointsToRelation *Ain, PointsToRelation *Aout, LivenessSet *Lout) {
     if (CallInst *CI = dyn_cast<CallInst>(I)) {
+        if (CI->doesNotReturn()) {
+            // If the function does not return, then it doesn't matter what
+            // anything points to after it executes, so don't do anything.
+            return false;
+        }
+
         PointsToNode *CINode = factory.getNode(CI);
         CallString newCS = CS.addCallSite(I);
         Function *Called = CI->getCalledFunction();
