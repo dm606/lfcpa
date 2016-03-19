@@ -24,7 +24,6 @@ class PointsToNode {
 public:
     enum PointsToNodeKind {
         PTNK_Unknown,
-        PTNK_Dummy,
         PTNK_Value,
         PTNK_Global,
         PTNK_NoAlias,
