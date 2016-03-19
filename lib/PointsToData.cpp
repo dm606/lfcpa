@@ -9,8 +9,8 @@ ProcedurePointsTo *PointsToData::getAtFunction(const Function *F) const {
     return result->second;
 }
 
-bool arePointsToMapsEqual(Function *F, IntraproceduralPointsTo *a, IntraproceduralPointsTo *b) {
-    for (inst_iterator I = inst_begin(F), E = inst_end(F); I != E; ++I) {
+bool arePointsToMapsEqual(const Function *F, IntraproceduralPointsTo *a, IntraproceduralPointsTo *b) {
+    for (const_inst_iterator I = inst_begin(F), E = inst_end(F); I != E; ++I) {
         auto p1 = a->find(&*I), p2 = b->find(&*I);
         assert (p1 != a -> end() && p2 != b -> end() && "Invalid points-to relations");
         LivenessSet *l1 = p1->second.first, *l2 = p2->second.first;
@@ -33,7 +33,7 @@ IntraproceduralPointsTo *copyPointsToMap(IntraproceduralPointsTo *M) {
     return Result;
 }
 
-IntraproceduralPointsTo *PointsToData::getPointsTo(const CallString &CS, Function *F, PointsToRelation &EntryPT, LivenessSet &ExitL, bool &Changed) {
+IntraproceduralPointsTo *PointsToData::getPointsTo(const CallString &CS, const Function *F, PointsToRelation &EntryPT, LivenessSet &ExitL, bool &Changed) {
     assert (!CS.isCyclic() && "Information has already been computed.");
 
     auto P = data.find(F);
@@ -73,14 +73,14 @@ IntraproceduralPointsTo *PointsToData::getPointsTo(const CallString &CS, Functio
 
     // The call string wasn't found.
     IntraproceduralPointsTo *Out = new IntraproceduralPointsTo();
-    for (inst_iterator I = inst_begin(F), E = inst_end(F); I != E; ++I)
+    for (const_inst_iterator I = inst_begin(F), E = inst_end(F); I != E; ++I)
         Out->insert({&*I, {new LivenessSet(), new PointsToRelation()}});
     Pointsto->push_back(std::make_tuple(CS, Out, EntryPT, ExitL));
     Changed = true;
     return Out;
 }
 
-bool PointsToData::attemptMakeCyclicCallString(Function *F, const CallString &CS, IntraproceduralPointsTo *Out) {
+bool PointsToData::attemptMakeCyclicCallString(const Function *F, const CallString &CS, IntraproceduralPointsTo *Out) {
     assert(!CS.isCyclic() && "The call string must be non-cyclic");
 
     if (CS.isEmpty())

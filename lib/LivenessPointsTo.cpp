@@ -214,17 +214,17 @@ void subtractKillStoreInst(const CallString &CS, LivenessSet &Lin, PointsToNode 
 
 void LivenessPointsTo::subtractKill(const CallString &CS,
                                     LivenessSet &Lin,
-                                    Instruction *I,
+                                    const Instruction *I,
                                     PointsToRelation *Ain) {
     assert(!isa<CallInst>(I) && "CallInsts are analysed using a different part of the code.");
     PointsToNode *N = factory.getNode(I);
 
-    if (StoreInst *SI = dyn_cast<StoreInst>(I)) {
-        Value *Ptr = SI->getPointerOperand();
+    if (const StoreInst *SI = dyn_cast<StoreInst>(I)) {
+        const Value *Ptr = SI->getPointerOperand();
         PointsToNode *PtrNode = factory.getNode(Ptr);
         subtractKillStoreInst(CS, Lin, PtrNode, Ain);
     }
-    else if (AllocaInst *AI = dyn_cast<AllocaInst>(I)) {
+    else if (const AllocaInst *AI = dyn_cast<AllocaInst>(I)) {
         PointsToNode *Alloca = factory.getNoAliasNode(AI);
         if (!Alloca->isSummaryNode(CS))
             killDescendants(Lin, Alloca);
@@ -422,19 +422,19 @@ void unionRefStoreInst(LivenessSet &Lin, PointsToNode *Ptr, PointsToNode *Value,
 }
 
 void LivenessPointsTo::unionRef(LivenessSet& Lin,
-                                Instruction *I,
+                                const Instruction *I,
                                 LivenessSet* Lout,
                                 PointsToRelation* Ain) {
-    if (LoadInst *LI = dyn_cast<LoadInst>(I)) {
+    if (const LoadInst *LI = dyn_cast<LoadInst>(I)) {
         // We only consider the pointer and the possible values in memory to be
         // ref'd if the load is live.
-        Value *Ptr = LI->getPointerOperand();
+        const Value *Ptr = LI->getPointerOperand();
         PointsToNode *PtrNode = factory.getNode(Ptr);
         PointsToNode *N = factory.getNode(I);
         unionRefLoadInst(Lin, PtrNode, N, Lout, Ain);
     }
-    else if (StoreInst *SI = dyn_cast<StoreInst>(I)) {
-        Value *Ptr = SI->getPointerOperand();
+    else if (const StoreInst *SI = dyn_cast<StoreInst>(I)) {
+        const Value *Ptr = SI->getPointerOperand();
         PointsToNode *PtrNode = factory.getNode(Ptr);
         PointsToNode *Value = factory.getNode(SI->getValueOperand());
         unionRefStoreInst(Lin, PtrNode, Value, Lout, Ain);
@@ -445,14 +445,14 @@ void LivenessPointsTo::unionRef(LivenessSet& Lin,
         PointsToNode *N = factory.getNode(I);
         if (!N->isAggregate()) {
             if (isLive(N, Lout))
-                for (Use &U : I->operands())
+                for (const Use &U : I->operands())
                     if (Value *Operand = dyn_cast<Value>(U))
                         makeDescendantsLive(Lin, factory.getNode(Operand));
         }
         else {
             if (isDescendantLive(N, Lout)) {
                 auto desc = getDescendants(N);
-                for (Use &U : I->operands()) {
+                for (const Use &U : I->operands()) {
                     if (Value *Operand = dyn_cast<Value>(U)) {
                         PointsToNode *OperandNode = factory.getNode(Operand);
                         if (!OperandNode->isAggregate())
@@ -472,7 +472,7 @@ void LivenessPointsTo::unionRef(LivenessSet& Lin,
     else {
         // If the instruction is not a load or a store, we consider all of it's
         // operands to be ref'd, even if the instruction is not live.
-        for (Use &U : I->operands())
+        for (const Use &U : I->operands())
             if (Value *Operand = dyn_cast<Value>(U))
                 makeDescendantsLive(Lin, factory.getNode(Operand));
     }
@@ -661,29 +661,29 @@ void insertNewPairsAssignment(PointsToRelation &Aout, PointsToNode *L, PointsToN
     }
 }
 
-void LivenessPointsTo::insertNewPairs(PointsToRelation &Aout, Instruction *I, PointsToRelation *Ain, LivenessSet *Lout) {
+void LivenessPointsTo::insertNewPairs(PointsToRelation &Aout, const Instruction *I, PointsToRelation *Ain, LivenessSet *Lout) {
     PointsToNode *Unknown = factory.getUnknown();
-    if (LoadInst *LI = dyn_cast<LoadInst>(I)) {
+    if (const LoadInst *LI = dyn_cast<LoadInst>(I)) {
         PointsToNode *Load = factory.getNode(LI);
         PointsToNode *Pointer = factory.getNode(LI->getPointerOperand());
         insertNewPairsLoadInst(Aout, Load, Pointer, Unknown, Ain, Lout);
     }
-    else if (StoreInst *SI = dyn_cast<StoreInst>(I)) {
+    else if (const StoreInst *SI = dyn_cast<StoreInst>(I)) {
         PointsToNode *Ptr = factory.getNode(SI->getPointerOperand());
         PointsToNode *Value = factory.getNode(SI->getValueOperand());
         insertNewPairsStoreInst(Aout, Ptr, Value, Unknown, Ain, Lout);
     }
-    else if (SelectInst *SI = dyn_cast<SelectInst>(I)) {
+    else if (const SelectInst *SI = dyn_cast<SelectInst>(I)) {
         PointsToNode *Select = factory.getNode(SI);
         insertNewPairsAssignment(Aout, Select, factory.getNode(SI->getFalseValue()), Unknown, Ain, Lout);
         insertNewPairsAssignment(Aout, Select, factory.getNode(SI->getTrueValue()), Unknown, Ain, Lout);
     }
-    else if (PHINode *Phi = dyn_cast<PHINode>(I)) {
+    else if (const PHINode *Phi = dyn_cast<PHINode>(I)) {
         PointsToNode *N = factory.getNode(Phi);
         for (auto &V : Phi->incoming_values())
             insertNewPairsAssignment(Aout, N, factory.getNode(V), Unknown, Ain, Lout);
     }
-    else if (GEPOperator *GEP = dyn_cast<GEPOperator>(I)) {
+    else if (const GEPOperator *GEP = dyn_cast<GEPOperator>(I)) {
         PointsToNode *N = factory.getNode(GEP);
         PointsToNode *Ptr = factory.getNode(GEP->getPointerOperand());
         if (N->singlePointee()) {
@@ -713,7 +713,7 @@ void LivenessPointsTo::insertNewPairs(PointsToRelation &Aout, Instruction *I, Po
                 Aout.insert({N, factory.getIndexedNode(*P, GEP)});
         }
     }
-    else if (AllocaInst *AI = dyn_cast<AllocaInst>(I)) {
+    else if (const AllocaInst *AI = dyn_cast<AllocaInst>(I)) {
         PointsToNode *Alloca = factory.getNoAliasNode(AI);
         makeDescendantsPointTo(Aout, Alloca, Unknown, Lout);
     }
@@ -727,11 +727,11 @@ bool hasPointee(PointsToRelation &S, PointsToNode *N) {
     return S.pointee_begin(N) != S.pointee_end(N);
 }
 
-void LivenessPointsTo::computeLout(Instruction *I, LivenessSet* Lout, IntraproceduralPointsTo *Result) {
+void LivenessPointsTo::computeLout(const Instruction *I, LivenessSet* Lout, IntraproceduralPointsTo *Result) {
     if (isa<ReturnInst>(I)) {
         // After a return instruction, nothing is live.
     }
-    else if (TerminatorInst *TI = dyn_cast<TerminatorInst>(I)) {
+    else if (const TerminatorInst *TI = dyn_cast<TerminatorInst>(I)) {
         // If this instruction is a terminator, it may have multiple
         // successors.
         Lout->clear();
@@ -746,7 +746,7 @@ void LivenessPointsTo::computeLout(Instruction *I, LivenessSet* Lout, Intraproce
     else {
         // If this instruction is not a terminator, it has exactly one
         // successor -- the next instruction in the function.
-        Instruction *Succ = getNextInstruction(I);
+        const Instruction *Succ = getNextInstruction(I);
         auto succ_result = Result->find(Succ);
         assert(succ_result != Result->end());
         auto succ_lin = succ_result->second.first;
@@ -757,7 +757,7 @@ void LivenessPointsTo::computeLout(Instruction *I, LivenessSet* Lout, Intraproce
     }
 }
 
-bool LivenessPointsTo::computeAin(Instruction *I, Function *F, PointsToRelation *Ain, LivenessSet *Lin, IntraproceduralPointsTo *Result, bool InsertAtFirstInstruction) {
+bool LivenessPointsTo::computeAin(const Instruction *I, const Function *F, PointsToRelation *Ain, LivenessSet *Lin, IntraproceduralPointsTo *Result, bool InsertAtFirstInstruction) {
     // Compute ain for the current instruction.
     PointsToRelation s;
     if (I == &*inst_begin(F)) {
@@ -781,14 +781,14 @@ bool LivenessPointsTo::computeAin(Instruction *I, Function *F, PointsToRelation 
     else {
         // If this is not the first instruction, then the points to
         // information from the predecessors can be propagated forwards.
-        BasicBlock *BB = I->getParent();
-        Instruction *FirstInBB = BB->begin();
+        const BasicBlock *BB = I->getParent();
+        const Instruction *FirstInBB = BB->begin();
         if (FirstInBB == I) {
-            for (pred_iterator PI = pred_begin(BB), E = pred_end(BB);
+            for (const_pred_iterator PI = pred_begin(BB), E = pred_end(BB);
                  PI != E;
                  ++PI) {
-                BasicBlock *PredBB = *PI;
-                Instruction *Pred = --(PredBB->end());
+                const BasicBlock *PredBB = *PI;
+                const Instruction *Pred = --(PredBB->end());
                 auto pred_result = Result->find(Pred);
                 assert(pred_result != Result->end());
                 PointsToRelation *PredAout = pred_result->second.second;
@@ -796,7 +796,7 @@ bool LivenessPointsTo::computeAin(Instruction *I, Function *F, PointsToRelation 
             }
         }
         else {
-            Instruction *Pred = getPreviousInstruction(I);
+            const Instruction *Pred = getPreviousInstruction(I);
             auto pred_result = Result->find(Pred);
             assert(pred_result != Result->end());
             PointsToRelation *PredAout = pred_result->second.second;
@@ -812,11 +812,11 @@ bool LivenessPointsTo::computeAin(Instruction *I, Function *F, PointsToRelation 
     return false;
 }
 
-bool LivenessPointsTo::computeLin(const CallString &CS, Instruction *I, PointsToRelation *Ain, LivenessSet *Lin, LivenessSet *Lout) {
-    if (CallInst *CI = dyn_cast<CallInst>(I)) {
+bool LivenessPointsTo::computeLin(const CallString &CS, const Instruction *I, PointsToRelation *Ain, LivenessSet *Lin, LivenessSet *Lout) {
+    if (const CallInst *CI = dyn_cast<CallInst>(I)) {
         PointsToNode *CINode = factory.getNode(CI);
         CallString newCS = CS.addCallSite(I);
-        Function *Called = CI->getCalledFunction();
+        const Function *Called = CI->getCalledFunction();
 
         bool analysable = Called != nullptr && !Called->isDeclaration();
         if (analysable) {
@@ -941,8 +941,8 @@ bool LivenessPointsTo::computeLin(const CallString &CS, Instruction *I, PointsTo
     }
 }
 
-bool LivenessPointsTo::computeAout(const CallString &CS, Instruction *I, PointsToRelation *Ain, PointsToRelation *Aout, LivenessSet *Lout) {
-    if (CallInst *CI = dyn_cast<CallInst>(I)) {
+bool LivenessPointsTo::computeAout(const CallString &CS, const Instruction *I, PointsToRelation *Ain, PointsToRelation *Aout, LivenessSet *Lout) {
+    if (const CallInst *CI = dyn_cast<CallInst>(I)) {
         if (CI->doesNotReturn()) {
             // If the function does not return, then it doesn't matter what
             // anything points to after it executes, so don't do anything.
@@ -951,7 +951,7 @@ bool LivenessPointsTo::computeAout(const CallString &CS, Instruction *I, PointsT
 
         PointsToNode *CINode = factory.getNode(CI);
         CallString newCS = CS.addCallSite(I);
-        Function *Called = CI->getCalledFunction();
+        const Function *Called = CI->getCalledFunction();
 
         bool analysable = Called != nullptr && !Called->isDeclaration();
         if (analysable) {
@@ -1042,7 +1042,7 @@ bool LivenessPointsTo::computeAout(const CallString &CS, Instruction *I, PointsT
     }
 }
 
-void LivenessPointsTo::insertReachableDeclaration(const CallString &CS, CallInst *CI, LivenessSet &Reachable, LivenessSet &Killable, PointsToRelation *Ain, YesNoMaybe &EverythingReachable) {
+void LivenessPointsTo::insertReachableDeclaration(const CallString &CS, const CallInst *CI, LivenessSet &Reachable, LivenessSet &Killable, PointsToRelation *Ain, YesNoMaybe &EverythingReachable) {
     std::set<PointsToNode *> seen;
     // FIXME: Can globals be accessed by the function?
     // This is roughly the mark phase from mark-and-sweep garbage collection. We
@@ -1080,7 +1080,7 @@ void LivenessPointsTo::insertReachableDeclaration(const CallString &CS, CallInst
         insertReachable(factory.getNode(V));
 }
 
-std::pair<LivenessSet, PointsToRelation> LivenessPointsTo::getCalledFunctionResult(const CallString &CS, Function *F) {
+std::pair<LivenessSet, PointsToRelation> LivenessPointsTo::getCalledFunctionResult(const CallString &CS, const Function *F) {
     std::pair<LivenessSet, PointsToRelation> Result;
     // If there is an exact match for F and CS in data, then this should be used.
     // Otherwise, we should use the data that is associated with the function
@@ -1103,7 +1103,7 @@ std::pair<LivenessSet, PointsToRelation> LivenessPointsTo::getCalledFunctionResu
     // with ReturnInsts.
     PointsToRelation aout;
     for (auto I = inst_begin(F), E = inst_end(F); I != E; ++I) {
-        Instruction *Inst = &*I;
+        const Instruction *Inst = &*I;
         if (isa<ReturnInst>(Inst)) {
             auto J = PT->find(Inst);
             assert(J != PT->end());
@@ -1128,7 +1128,7 @@ std::set<PointsToNode *> LivenessPointsTo::getReturnValues(const Function *F) {
 }
 
 
-LivenessSet LivenessPointsTo::computeFunctionExitLiveness(CallInst *CI, LivenessSet *Lout) {
+LivenessSet LivenessPointsTo::computeFunctionExitLiveness(const CallInst *CI, LivenessSet *Lout) {
     PointsToNode *CINode = factory.getNode(CI);
 
     LivenessSet L;
@@ -1154,7 +1154,7 @@ LivenessSet LivenessPointsTo::computeFunctionExitLiveness(CallInst *CI, Liveness
     return L;
 }
 
-PointsToRelation *LivenessPointsTo::replaceActualArgumentsWithFormal(Function *Callee, CallInst *CI, PointsToRelation *Ain) {
+PointsToRelation *LivenessPointsTo::replaceActualArgumentsWithFormal(const Function *Callee, const CallInst *CI, PointsToRelation *Ain) {
     SmallVector<std::pair<PointsToNode *, PointsToNode *>, 8> ArgMap;
     auto Arg = Callee->arg_begin();
     PointsToRelation *R = new PointsToRelation();
@@ -1162,7 +1162,7 @@ PointsToRelation *LivenessPointsTo::replaceActualArgumentsWithFormal(Function *C
         PointsToNode *Node = factory.getNode(V);
         // FIXME: What about varargs functions?
         assert(Arg != Callee->arg_end() && "Argument count mismatch");
-        Argument *A = &*Arg;
+        const Argument *A = &*Arg;
         PointsToNode *ANode = factory.getNode(A);
 
         ArgMap.push_back({Node, ANode});
@@ -1189,7 +1189,7 @@ PointsToRelation *LivenessPointsTo::replaceActualArgumentsWithFormal(Function *C
     return R;
 }
 
-LivenessSet LivenessPointsTo::replaceFormalArgumentsWithActual(const CallString &CS, Function *Callee, CallInst *CI, LivenessSet &CalledFunctionLin, LivenessSet *Lout) {
+LivenessSet LivenessPointsTo::replaceFormalArgumentsWithActual(const CallString &CS, const Function *Callee, const CallInst *CI, LivenessSet &CalledFunctionLin, LivenessSet *Lout) {
     LivenessSet L;
     bool calleeInCallString = CI->getParent()->getParent() == Callee || CS.containsCallIn(Callee);
 
@@ -1213,7 +1213,7 @@ LivenessSet LivenessPointsTo::replaceFormalArgumentsWithActual(const CallString 
         PointsToNode *Node = factory.getNode(V);
         // FIXME: What about varargs functions?
         assert(Arg != Callee->arg_end() && "Argument count mismatch");
-        Argument *A = &*Arg;
+        const Argument *A = &*Arg;
         PointsToNode *ANode = factory.getNode(A);
 
         if (L.find(ANode) != L.end()) {
@@ -1237,7 +1237,7 @@ LivenessSet LivenessPointsTo::replaceFormalArgumentsWithActual(const CallString 
     return L;
 }
 
-PointsToRelation LivenessPointsTo::replaceReturnValuesWithCallInst(CallInst *CI, PointsToRelation &Aout, std::set<PointsToNode *> &ReturnValues, LivenessSet *Lout) {
+PointsToRelation LivenessPointsTo::replaceReturnValuesWithCallInst(const CallInst *CI, PointsToRelation &Aout, std::set<PointsToNode *> &ReturnValues, LivenessSet *Lout) {
     PointsToNode *CINode = factory.getNode(CI);
     bool CINodeLive = Lout->find(CINode) != Lout->end();
     PointsToRelation R;
@@ -1260,7 +1260,7 @@ PointsToRelation LivenessPointsTo::replaceReturnValuesWithCallInst(CallInst *CI,
     return R;
 }
 
-void LivenessPointsTo::runOnFunction(Function *F, const CallString &CS, IntraproceduralPointsTo *Result, PointsToRelation *EntryPointsTo, LivenessSet &ExitLiveness, bool MakeReturnValuesLive, SmallVector<std::tuple<CallInst *, Function *, PointsToRelation *, LivenessSet, bool>, 8> &Calls) {
+void LivenessPointsTo::runOnFunction(const Function *F, const CallString &CS, IntraproceduralPointsTo *Result, PointsToRelation *EntryPointsTo, LivenessSet &ExitLiveness, bool MakeReturnValuesLive, SmallVector<std::tuple<const CallInst *, const Function *, PointsToRelation *, LivenessSet, bool>, 8> &Calls) {
     timesRanOnFunction++;
     assert(EntryPointsTo != nullptr);
     assert(!F->isDeclaration() && "Can only run on definitions.");
@@ -1271,15 +1271,15 @@ void LivenessPointsTo::runOnFunction(Function *F, const CallString &CS, Intrapro
 
     // Initialize ain, aout, lin and lout for each instruction, and ensure that
     // GEPs are handled correctly.
-    for (inst_iterator S = inst_begin(F), I = S, E = inst_end(F); I != E; ++I) {
-        Instruction *inst = &*I;
+    for (const_inst_iterator S = inst_begin(F), I = S, E = inst_end(F); I != E; ++I) {
+        const Instruction *inst = &*I;
 
         // If the instruction is a ReturnInst, the values that are live after
         // the instruction is executed are exactly those specified in
         // ExitLiveness, if it exists. If the instruction is the first in the
         // function, the points-to information before it is executed is exactly
         // that in EntryPointsTo.
-        if (ReturnInst *RI = dyn_cast<ReturnInst>(inst)) {
+        if (const ReturnInst *RI = dyn_cast<ReturnInst>(inst)) {
             LivenessSet *L = new LivenessSet();
             L->insertAll(ExitLiveness);
             if (RI->getReturnValue() != nullptr && MakeReturnValuesLive)
@@ -1295,7 +1295,7 @@ void LivenessPointsTo::runOnFunction(Function *F, const CallString &CS, Intrapro
         else
             nonresult.insert({inst, {new LivenessSet(), new PointsToRelation()}});
 
-        if (GetElementPtrInst *GEP = dyn_cast<GetElementPtrInst>(inst)) {
+        if (const GetElementPtrInst *GEP = dyn_cast<GetElementPtrInst>(inst)) {
             // If some GEPs which are based on a pointer have all constant
             // indices and some have none-constant indices, then we want to
             // treat all of the GEPs based on that pointer field-insensitively.
@@ -1309,8 +1309,8 @@ void LivenessPointsTo::runOnFunction(Function *F, const CallString &CS, Intrapro
 
     // Create and initialize worklist. Also initialize the values of Lout and
     // Ain, since they are not preserved across calls.
-    SmallPtrSet<Instruction *, 128> worklist;
-    for (inst_iterator I = inst_begin(F), E = inst_end(F); I != E; I++) {
+    SmallPtrSet<const Instruction *, 128> worklist;
+    for (const_inst_iterator I = inst_begin(F), E = inst_end(F); I != E; I++) {
         worklist.insert(&*I);
         auto instruction_nonresult = nonresult.find(&*I), instruction_result = Result->find(&*I);
         assert (instruction_nonresult != nonresult.end());
@@ -1327,7 +1327,7 @@ void LivenessPointsTo::runOnFunction(Function *F, const CallString &CS, Intrapro
         worklistIterations++;
 
         auto II = worklist.begin();
-        Instruction *I = *II;
+        const Instruction *I = *II;
         worklist.erase(I);
 
         auto instruction_nonresult = nonresult.find(I), instruction_result = Result->find(I);
@@ -1354,7 +1354,7 @@ void LivenessPointsTo::runOnFunction(Function *F, const CallString &CS, Intrapro
 
         // Add succs to worklist
         if (addSuccsToWorklist) {
-            if (TerminatorInst *TI = dyn_cast<TerminatorInst>(I)) {
+            if (const TerminatorInst *TI = dyn_cast<TerminatorInst>(I)) {
                 for (unsigned i = 0; i < TI->getNumSuccessors(); i++)
                     worklist.insert(TI->getSuccessor(i)->begin());
             }
@@ -1368,13 +1368,13 @@ void LivenessPointsTo::runOnFunction(Function *F, const CallString &CS, Intrapro
 
         // Add preds to worklist
         if (addPredsToWorklist) {
-            BasicBlock *BB = I->getParent();
-            Instruction *FirstInBB = BB->begin();
+            const BasicBlock *BB = I->getParent();
+            const Instruction *FirstInBB = BB->begin();
             if (FirstInBB == I) {
-                for (pred_iterator PI = pred_begin(BB), E = pred_end(BB);
+                for (const_pred_iterator PI = pred_begin(BB), E = pred_end(BB);
                      PI != E;
                      ++PI) {
-                    BasicBlock *Pred = *PI;
+                    const BasicBlock *Pred = *PI;
                     worklist.insert(--(Pred->end()));
                 }
             }
@@ -1386,7 +1386,7 @@ void LivenessPointsTo::runOnFunction(Function *F, const CallString &CS, Intrapro
             createdSummaryNode = false;
             // We need to rerun on stores because they might need to treat a
             // summary node differently.
-            for (inst_iterator I = inst_begin(F), E = inst_end(F); I != E; I++)
+            for (const_inst_iterator I = inst_begin(F), E = inst_end(F); I != E; I++)
                 if (isa<StoreInst>(*I))
                     worklist.insert(&*I);
         }
@@ -1395,10 +1395,10 @@ void LivenessPointsTo::runOnFunction(Function *F, const CallString &CS, Intrapro
     // Determine the boundary information to use when running the analysis on
     // the called functions.
     for (auto I = inst_begin(F), E = inst_end(F); I != E; ++I) {
-        if (CallInst *CI = dyn_cast<CallInst>(&*I)) {
+        if (const CallInst *CI = dyn_cast<CallInst>(&*I)) {
             PointsToNode *CINode = factory.getNode(CI);
             CallString newCS = CS.addCallSite(&*I);
-            Function *Called = CI->getCalledFunction();
+            const Function *Called = CI->getCalledFunction();
 
             if (Called != nullptr && !Called->isDeclaration()) {
                 auto instruction_nonresult = nonresult.find(&*I);
@@ -1418,7 +1418,7 @@ void LivenessPointsTo::runOnFunction(Function *F, const CallString &CS, Intrapro
 }
 
 bool LivenessPointsTo::runOnFunctionAt(const CallString& CS,
-                                       Function *F,
+                                       const Function *F,
                                        PointsToRelation *EntryPointsTo,
                                        LivenessSet &ExitLiveness,
                                        bool MakeReturnValuesLive,
@@ -1431,7 +1431,7 @@ bool LivenessPointsTo::runOnFunctionAt(const CallString& CS,
         return false;
     }
     IntraproceduralPointsTo *Copy = copyPointsToMap(Out);
-    SmallVector<std::tuple<CallInst *, Function *, PointsToRelation *, LivenessSet, bool>, 8> Calls;
+    SmallVector<std::tuple<const CallInst *, const Function *, PointsToRelation *, LivenessSet, bool>, 8> Calls;
     runOnFunction(F, CS, Out, EntryPointsTo, ExitLiveness, MakeReturnValuesLive, Calls);
 
     if (arePointsToMapsEqual(F, Out, Copy)) {
@@ -1450,8 +1450,8 @@ bool LivenessPointsTo::runOnFunctionAt(const CallString& CS,
         bool rerun = false;
 
         for (auto C : Calls) {
-            CallInst *I;
-            Function *F;
+            const CallInst *I;
+            const Function *F;
             PointsToRelation *PT;
             LivenessSet L;
             bool RVL;

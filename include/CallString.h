@@ -10,7 +10,7 @@ using namespace llvm;
 class CallString {
     public:
         static CallString empty();
-        CallString addCallSite(Instruction *) const;
+        CallString addCallSite(const Instruction *) const;
         bool isNonCyclicPrefix(const CallString &) const;
         CallString createCyclicFromPrefix(const CallString &) const;
         bool matches(const CallString &) const;
@@ -34,19 +34,19 @@ class CallString {
             return nonCyclic.size();
         }
 
-        inline Instruction *getLastCall() const {
+        inline const Instruction *getLastCall() const {
             assert(!isCyclic());
             assert(!isEmpty());
             return nonCyclic.back();
         }
 
         inline bool containsCallIn(const Function *F) const {
-            for (Instruction *I : nonCyclic)
-                if (CallInst *CI = dyn_cast<CallInst>(I))
+            for (const Instruction *I : nonCyclic)
+                if (const CallInst *CI = dyn_cast<CallInst>(I))
                     if (CI->getParent()->getParent() == F)
                         return true;
-            for (Instruction *I : cyclic)
-                if (CallInst *CI = dyn_cast<CallInst>(I))
+            for (const Instruction *I : cyclic)
+                if (const CallInst *CI = dyn_cast<CallInst>(I))
                     if (CI->getParent()->getParent() == F)
                         return true;
             return false;
@@ -55,9 +55,9 @@ class CallString {
         inline bool reachedMoreThanOnce(const Function *F) const {
             assert(!isCyclic());
             bool foundCall = false;
-            CallInst *Last = nullptr;
-            for (Instruction *I : nonCyclic) {
-                if (CallInst *CI = dyn_cast<CallInst>(I)) {
+            const CallInst *Last = nullptr;
+            for (const Instruction *I : nonCyclic) {
+                if (const CallInst *CI = dyn_cast<CallInst>(I)) {
                     if (CI->getParent()->getParent() == F) {
                         if (foundCall)
                             return true;
@@ -74,8 +74,8 @@ class CallString {
             return false;
         }
     private:
-        SmallVector<Instruction *, 8> nonCyclic;
-        SmallVector<Instruction *, 8> cyclic;
+        SmallVector<const Instruction *, 8> nonCyclic;
+        SmallVector<const Instruction *, 8> cyclic;
         CallString () {}
 };
 

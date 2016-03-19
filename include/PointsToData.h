@@ -17,15 +17,15 @@ typedef std::tuple<CallInst *, Function *, PointsToRelation *, LivenessSet, bool
 typedef DenseMap<const Instruction *, std::pair<LivenessSet *, PointsToRelation *>> IntraproceduralPointsTo;
 typedef SmallVector<std::tuple<CallString, IntraproceduralPointsTo *, PointsToRelation, LivenessSet>, 8> ProcedurePointsTo;
 
-bool arePointsToMapsEqual(Function *F, IntraproceduralPointsTo *a, IntraproceduralPointsTo *b);
+bool arePointsToMapsEqual(const Function *F, IntraproceduralPointsTo *a, IntraproceduralPointsTo *b);
 IntraproceduralPointsTo *copyPointsToMap(IntraproceduralPointsTo *);
 
 class PointsToData {
     public:
         PointsToData() {}
         ProcedurePointsTo *getAtFunction(const Function *) const;
-        IntraproceduralPointsTo *getPointsTo(const CallString &, Function *, PointsToRelation &, LivenessSet &, bool &);
-        bool attemptMakeCyclicCallString(Function *, const CallString &, IntraproceduralPointsTo *);
+        IntraproceduralPointsTo *getPointsTo(const CallString &, const Function *, PointsToRelation &, LivenessSet &, bool &);
+        bool attemptMakeCyclicCallString(const Function *, const CallString &, IntraproceduralPointsTo *);
         bool hasDataForFunction(const Function *) const;
         IntraproceduralPointsTo *getAtLongestPrefix(const Function *, const CallString &) const;
     private:

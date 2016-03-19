@@ -9,7 +9,7 @@ CallString CallString::empty() {
     return CallString();
 }
 
-CallString CallString::addCallSite(Instruction *I) const {
+CallString CallString::addCallSite(const Instruction *I) const {
     assert(isa<CallInst>(I) && "Only call instructions can be call sites.");
     assert(!isCyclic() && "Call sites can only be added to non-cyclic call instructions.");
     CallString result = *this;
@@ -52,7 +52,7 @@ CallString CallString::createCyclicFromPrefix(const CallString &S) const {
 
     assert(thisIter != thisEnd && "The prefix is too long.");
     CallString result = S;
-    result.cyclic = SmallVector<Instruction *, 8>(thisIter, thisEnd);
+    result.cyclic = SmallVector<const Instruction *, 8>(thisIter, thisEnd);
     return result;
 }
 
