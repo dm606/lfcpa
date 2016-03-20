@@ -25,9 +25,17 @@ private:
     void unionRef(LivenessSet &, const Instruction *, LivenessSet *, PointsToRelation *);
     void computeLout(const Instruction *, LivenessSet * , IntraproceduralPointsTo *);
     bool computeAin(const Instruction *, const Function *, PointsToRelation *, LivenessSet *, IntraproceduralPointsTo *, bool InsertAtFirstInstruction);
+    bool getCalledFunctions(SmallVector<const Function *, 8> &, const CallInst *, PointsToRelation *);
+    void addLinUnknownCalledFunction(LivenessSet &, const CallString &, const CallInst *, PointsToRelation *, LivenessSet *);
+    void addLinCalledDeclaration(LivenessSet &, const CallString &, const CallInst *, PointsToRelation *, LivenessSet *);
+    void addLinAnalysableCalledFunction(LivenessSet &, const Function *, const CallString &, const CallInst *, LivenessSet *);
     bool computeLin(const CallString &, const Instruction *, PointsToRelation *, LivenessSet *, LivenessSet *);
+    void addAoutUnknownCalledFunction(PointsToRelation &, const CallString &, const CallInst *, PointsToRelation *, LivenessSet *);
+    void addAoutCalledDeclaration(PointsToRelation &, const CallString &, const CallInst *, PointsToRelation *, LivenessSet *);
+    void addAoutAnalysableCalledFunction(PointsToRelation &, const Function *, const CallString &, const CallInst *, PointsToRelation *, LivenessSet *);
     bool computeAout(const CallString &, const Instruction *, PointsToRelation *, PointsToRelation *, LivenessSet *);
     void insertReachableDeclaration(const CallString &, const CallInst *, LivenessSet &, LivenessSet &, PointsToRelation *, YesNoMaybe &);
+    void insertReachableUnknownFunction(const CallString &, const CallInst *, LivenessSet &, LivenessSet &, PointsToRelation *, YesNoMaybe &);
     std::pair<LivenessSet, PointsToRelation> getCalledFunctionResult(const CallString &, const Function *);
     std::set<PointsToNode *> getReturnValues(const Function *);
     LivenessSet computeFunctionExitLiveness(const CallInst *, LivenessSet *);

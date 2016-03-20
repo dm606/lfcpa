@@ -95,6 +95,9 @@ public:
     virtual std::pair<const PointsToNode *, SmallVector<uint64_t, 4>> getAddress() const {
         return std::make_pair(this, SmallVector<uint64_t, 4>());
     }
+    virtual const Function *getFunction() const {
+        return nullptr;
+    }
 };
 
 class UnknownPointsToNode : public PointsToNode {
@@ -155,16 +158,25 @@ class ValuePointsToNode : public PointsToNode {
 
 class GlobalPointsToNode : public PointsToNode {
     private:
+        const GlobalObject *Object;
         std::string stdName;
         bool isPointer;
     public:
-        GlobalPointsToNode(const GlobalObject *G) : PointsToNode(PTNK_Global) {
+        GlobalPointsToNode(const GlobalObject *G) : PointsToNode(PTNK_Global), Object(G) {
            stdName = "global:" + G->getName().str();
            name = StringRef(stdName);
            isPointer = G->getValueType()->isPointerTy();
         }
 
         bool hasPointerType() const override { return isPointer; }
+
+        const Function *getFunction() const override {
+            if (const Function *F = dyn_cast<Function>(Object)) {
+                return F;
+            }
+
+            return nullptr;
+        }
 
         static bool classof(const PointsToNode *N) {
             return N->getKind() == PTNK_Global;
