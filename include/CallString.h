@@ -68,8 +68,11 @@ class CallString {
                 }
             }
 
-            if (foundCall && Last != nullptr)
+            if (foundCall && Last != nullptr) {
+                // This is imprecise because Last may not actually be a call to
+                // F if getCalledFunction is nullptr, but it is safe.
                 return Last->getCalledFunction() == nullptr || Last->getCalledFunction() == F;
+            }
 
             return false;
         }
