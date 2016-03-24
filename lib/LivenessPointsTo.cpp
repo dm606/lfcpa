@@ -229,6 +229,15 @@ void LivenessPointsTo::subtractKill(const CallString &CS,
         if (!Alloca->isSummaryNode(CS))
             killDescendants(Lin, Alloca);
     }
+    else if (const BitCastInst *CI = dyn_cast<BitCastInst>(I)) {
+        if (!canHandleBitcast(CI)) {
+            // These instructions only kill themselves.
+        }
+        else {
+            // Since we use the same node as the operand, we don't do anything
+            // at the bitcast.
+        }
+    }
     else if (isa<GetElementPtrInst>(I) || isa<PHINode>(I) || isa<SelectInst>(I) || isa<ReturnInst>(I) || isa<UnreachableInst>(I) || isa<LoadInst>(I)) {
         // These instructions only kill themselves.
     }
@@ -467,6 +476,12 @@ void LivenessPointsTo::unionRef(LivenessSet& Lin,
                     }
                 }
             }
+        }
+    }
+    else if (const BitCastInst *CI = dyn_cast<BitCastInst>(I)) {
+        if (!canHandleBitcast(CI)) {
+            if (isLive(factory.getNode(CI), Lout))
+                makeDescendantsLive(Lin, factory.getNode(CI->getOperand(0)));
         }
     }
     else {
@@ -716,6 +731,10 @@ void LivenessPointsTo::insertNewPairs(PointsToRelation &Aout, const Instruction 
     else if (const AllocaInst *AI = dyn_cast<AllocaInst>(I)) {
         PointsToNode *Alloca = factory.getNoAliasNode(AI);
         makeDescendantsPointTo(Aout, Alloca, Unknown, Lout);
+    }
+    else if (const BitCastInst *CI = dyn_cast<BitCastInst>(I)) {
+        if (!canHandleBitcast(CI))
+            makeDescendantsPointTo(Aout, factory.getNode(CI), Unknown, Lout);
     }
 }
 

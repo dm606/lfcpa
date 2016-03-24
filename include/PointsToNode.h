@@ -123,6 +123,15 @@ class UnknownPointsToNode : public PointsToNode {
         }
 };
 
+inline Type *getEffectiveType(const Value *V) {
+    auto I = V->user_begin(), E = V->user_end();
+    if (I != E)
+        if (const BitCastInst *CI = dyn_cast<BitCastInst>(*I))
+            if ((++I) == E)
+                return CI->getType();
+    return V->getType();
+}
+
 class ValuePointsToNode : public PointsToNode {
     private:
         std::string stdName;
@@ -137,7 +146,7 @@ class ValuePointsToNode : public PointsToNode {
                 stdName = std::to_string(nextId++);
                 name = StringRef(stdName);
             }
-            isPointer = V->getType()->isPointerTy();
+            isPointer = getEffectiveType(V)->isPointerTy();
             userOrArg = isa<User>(V) || isa<Argument>(V);
         }
 
@@ -165,7 +174,9 @@ class GlobalPointsToNode : public PointsToNode {
         GlobalPointsToNode(const GlobalObject *G) : PointsToNode(PTNK_Global), Object(G) {
            stdName = "global:" + G->getName().str();
            name = StringRef(stdName);
-           isPointer = G->getValueType()->isPointerTy();
+           auto GTy = getEffectiveType(G);
+           assert(GTy->isPointerTy());
+           isPointer = GTy->getPointerElementType()->isPointerTy();
         }
 
         bool hasPointerType() const override { return isPointer; }
@@ -190,17 +201,19 @@ class NoAliasPointsToNode : public PointsToNode {
     public:
         const Function *Definer;
         NoAliasPointsToNode(const AllocaInst *AI) : PointsToNode(PTNK_NoAlias), Definer(AI->getParent()->getParent()) {
-           stdName = "alloca:" + AI->getName().str();
-           name = StringRef(stdName);
-           isPointer = AI->getAllocatedType()->isPointerTy();
+            stdName = "alloca:" + AI->getName().str();
+            name = StringRef(stdName);
+            auto Ty = getEffectiveType(AI);
+            assert(Ty->isPointerTy());
+            isPointer = Ty->getPointerElementType()->isPointerTy();
         }
         NoAliasPointsToNode(const CallInst *CI) : PointsToNode(PTNK_NoAlias), Definer(CI->getParent()->getParent()) {
             assert(CI->paramHasAttr(0, Attribute::NoAlias));
             stdName = "noalias:" + CI->getName().str();
             name = StringRef(stdName);
-            Type *ReturnType = CI->getFunctionType()->getReturnType();
-            assert(ReturnType->isPointerTy());
-            isPointer = ReturnType->getPointerElementType()->isPointerTy();
+            auto Ty = getEffectiveType(CI);
+            assert(Ty->isPointerTy());
+            isPointer = Ty->getPointerElementType()->isPointerTy();
         }
 
         bool hasPointerType() const override { return isPointer; }

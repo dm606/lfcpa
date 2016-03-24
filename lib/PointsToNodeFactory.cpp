@@ -3,6 +3,7 @@
 
 #include "PointsToNode.h"
 #include "PointsToNodeFactory.h"
+#include "LivenessPointsToMisc.h"
 
 PointsToNode *PointsToNodeFactory::getUnknown() {
     return &unknown;
@@ -83,7 +84,16 @@ PointsToNode* PointsToNodeFactory::getNode(const Value *V) {
                     Node->markPointeesAreSummaryNodes();
             }
         }
-        else {
+        else if (const BitCastInst *I = dyn_cast<BitCastInst>(V)) {
+            // If the value that is casted is only used by this bitcast then
+            // they can be safely associated with the same node. If the value
+            // has more than one user then this cannot be done because the cast
+            // may change the size of the value that is pointed to.
+            if (canHandleBitcast(I))
+                Node = getNode(I->getOperand(0));
+        }
+
+        if (Node == nullptr) {
             PointsToNode *Pointee = nullptr;
             if (const GlobalObject *G = dyn_cast<GlobalObject>(V))
                 Pointee = getGlobalNode(G);
