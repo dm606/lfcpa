@@ -873,6 +873,7 @@ void LivenessPointsTo::addLinUnknownCalledFunction(LivenessSet &N, const CallStr
         // If everything is reachable, then everything might be
         // ref'd, so insert as much as possible into n.
         Ain->insertEverythingInto(n);
+        n.insertAll(reachable);
     }
     else {
         // If only the nodes in reachable are reachable, then only
@@ -903,6 +904,7 @@ void LivenessPointsTo::addLinCalledDeclaration(LivenessSet &N, const CallString 
         // If everything is reachable, then everything might be
         // ref'd, so insert as much as possible into n.
         Ain->insertEverythingInto(n);
+        n.insertAll(reachable);
     }
     else {
         // If only the nodes in reachable are reachable, then only
