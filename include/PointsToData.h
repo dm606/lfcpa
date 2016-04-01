@@ -17,8 +17,8 @@ typedef std::tuple<CallInst *, Function *, PointsToRelation *, LivenessSet, bool
 typedef DenseMap<const Instruction *, std::pair<LivenessSet *, PointsToRelation *>> IntraproceduralPointsTo;
 typedef SmallVector<std::tuple<CallString, IntraproceduralPointsTo *, PointsToRelation, LivenessSet>, 8> ProcedurePointsTo;
 
-bool arePointsToMapsEqual(const Function *F, IntraproceduralPointsTo *a, IntraproceduralPointsTo *b);
-IntraproceduralPointsTo *copyPointsToMap(IntraproceduralPointsTo *);
+bool arePointsToMapsEqual(const Function *F, IntraproceduralPointsTo *a, IntraproceduralPointsTo &b);
+IntraproceduralPointsTo copyPointsToMap(IntraproceduralPointsTo *);
 
 class PointsToData {
     public:

@@ -9,10 +9,10 @@ ProcedurePointsTo *PointsToData::getAtFunction(const Function *F) const {
     return result->second;
 }
 
-bool arePointsToMapsEqual(const Function *F, IntraproceduralPointsTo *a, IntraproceduralPointsTo *b) {
+bool arePointsToMapsEqual(const Function *F, IntraproceduralPointsTo *a, IntraproceduralPointsTo &b) {
     for (const_inst_iterator I = inst_begin(F), E = inst_end(F); I != E; ++I) {
-        auto p1 = a->find(&*I), p2 = b->find(&*I);
-        assert (p1 != a -> end() && p2 != b -> end() && "Invalid points-to relations");
+        auto p1 = a->find(&*I), p2 = b.find(&*I);
+        assert(p1 != a->end() && p2 != b.end() && "Invalid points-to relations");
         LivenessSet *l1 = p1->second.first, *l2 = p2->second.first;
         if (*l1 != *l2)
             return false;
@@ -23,12 +23,12 @@ bool arePointsToMapsEqual(const Function *F, IntraproceduralPointsTo *a, Intrapr
     return true;
 }
 
-IntraproceduralPointsTo *copyPointsToMap(IntraproceduralPointsTo *M) {
-    IntraproceduralPointsTo *Result = new IntraproceduralPointsTo();
+IntraproceduralPointsTo copyPointsToMap(IntraproceduralPointsTo *M) {
+    IntraproceduralPointsTo Result;
     for (auto P : *M) {
         LivenessSet *L = new LivenessSet(*P.second.first);
         PointsToRelation *R = new PointsToRelation(*P.second.second);
-        Result->insert(std::make_pair(P.first, std::make_pair(L, R)));
+        Result.insert(std::make_pair(P.first, std::make_pair(L, R)));
     }
     return Result;
 }
@@ -108,7 +108,7 @@ bool PointsToData::attemptMakeCyclicCallString(const Function *F, const CallStri
             !ICS.isEmpty() &&
             ICS.getLastCall() == LastCall &&
             CS.isNonCyclicPrefix(ICS) &&
-            arePointsToMapsEqual(F, IData, Out)) {
+            arePointsToMapsEqual(F, IData, *Out)) {
             CallString newCS = CS.createCyclicFromPrefix(ICS);
             *I = std::make_tuple(newCS, Out, IPT, IL);
             break;

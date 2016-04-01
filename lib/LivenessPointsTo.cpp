@@ -88,11 +88,11 @@ std::pair<PointsToNode *, PointsToNode *> makePointsToPair(PointsToNode *Pointer
     return {Pointer, Pointee};
 }
 
-bool isLive(PointsToNode *N, LivenessSet *L) {
-    return N->singlePointee() || !N->hasPointerType() || L->find(N) != L->end();
+bool isLive(PointsToNode *N, LivenessSet &L) {
+    return N->singlePointee() || !N->hasPointerType() || L.find(N) != L.end();
 }
 
-bool isDescendantLive(PointsToNode *N, LivenessSet *L) {
+bool isDescendantLive(PointsToNode *N, LivenessSet &L) {
     if (isLive(N, L))
         return true;
 
@@ -104,9 +104,9 @@ bool isDescendantLive(PointsToNode *N, LivenessSet *L) {
     return false;
 }
 
-void makeDescendantsAndPointeesLive(LivenessSet &Lin, PointsToNode *N, PointsToRelation *Ain) {
+void makeDescendantsAndPointeesLive(LivenessSet &Lin, PointsToNode *N, PointsToRelation &Ain) {
     Lin.insert(N);
-    for (auto P = Ain->pointee_begin(N), E = Ain->pointee_end(N); P != E; ++P)
+    for (auto P = Ain.pointee_begin(N), E = Ain.pointee_end(N); P != E; ++P)
         Lin.insert(*P);
     for (auto *Child : N->children)
         makeDescendantsAndPointeesLive(Lin, Child, Ain);
@@ -172,12 +172,12 @@ void killDescendants(LivenessSet &Lin, PointsToNode *N) {
         Lin.erase(C);
 }
 
-void subtractKillStoreInst(const CallString &CS, LivenessSet &Lin, PointsToNode *Ptr, PointsToRelation *Ain) {
+void subtractKillStoreInst(const CallString &CS, LivenessSet &Lin, PointsToNode *Ptr, PointsToRelation &Ain) {
     if (!Ptr->isAggregate()) {
         bool strongUpdate = true;
         PointsToNode *PointedTo = nullptr;
 
-        for (auto P = Ain->pointee_begin(Ptr), E = Ain->pointee_end(Ptr); P != E; ++P) {
+        for (auto P = Ain.pointee_begin(Ptr), E = Ain.pointee_end(Ptr); P != E; ++P) {
             if ((*P)->isSummaryNode(CS) || PointedTo != nullptr) {
                 strongUpdate = false;
                 break;
@@ -215,7 +215,7 @@ void subtractKillStoreInst(const CallString &CS, LivenessSet &Lin, PointsToNode 
 void LivenessPointsTo::subtractKill(const CallString &CS,
                                     LivenessSet &Lin,
                                     const Instruction *I,
-                                    PointsToRelation *Ain) {
+                                    PointsToRelation &Ain) {
     assert(!isa<CallInst>(I) && "CallInsts are analysed using a different part of the code.");
     PointsToNode *N = factory.getNode(I);
 
@@ -267,23 +267,23 @@ void makeDescendantsLive(LivenessSet &Lin, PointsToNode *N) {
         makeDescendantsLive(Lin, D);
 }
 
-void makeDescendantsPointTo(PointsToRelation &Aout, PointsToNode *N, PointsToNode *Pointee, LivenessSet *Lout) {
-    if (Lout->find(N) != Lout->end())
+void makeDescendantsPointTo(PointsToRelation &Aout, PointsToNode *N, PointsToNode *Pointee, LivenessSet &Lout) {
+    if (Lout.find(N) != Lout.end())
         Aout.insert(makePointsToPair(N, Pointee));
 
     for (PointsToNode *D : N->children)
         makeDescendantsPointTo(Aout, D, Pointee, Lout);
 }
 
-bool isPointeeLive(PointsToNode *N, LivenessSet *Lout, PointsToRelation *Ain) {
-    for (auto P = Ain->pointee_begin(N), E = Ain->pointee_end(N); P != E; ++P)
+bool isPointeeLive(PointsToNode *N, LivenessSet &Lout, PointsToRelation &Ain) {
+    for (auto P = Ain.pointee_begin(N), E = Ain.pointee_end(N); P != E; ++P)
         if (isLive(*P, Lout))
             return true;
 
     return false;
 }
 
-bool isPointeeOfDescendantLive(PointsToNode *N, LivenessSet *Lout, PointsToRelation *Ain) {
+bool isPointeeOfDescendantLive(PointsToNode *N, LivenessSet &Lout, PointsToRelation &Ain) {
     if (isPointeeLive(N, Lout, Ain))
         return true;
 
@@ -347,10 +347,10 @@ void makeChildrenPointer(PointsToNode *NoChildren, PointsToNode *SomeChildren) {
     }
 }
 
-void unionRefLoadInst(LivenessSet& Lin, PointsToNode *Ptr, PointsToNode *Load, LivenessSet *Lout, PointsToRelation *Ain) {
+void unionRefLoadInst(LivenessSet& Lin, PointsToNode *Ptr, PointsToNode *Load, LivenessSet &Lout, PointsToRelation &Ain) {
     if (!Ptr->isAggregate() && isDescendantLive(Load, Lout)) {
         Lin.insert(Ptr);
-        for (auto P = Ain->pointee_begin(Ptr), E = Ain->pointee_end(Ptr); P != E; ++P)
+        for (auto P = Ain.pointee_begin(Ptr), E = Ain.pointee_end(Ptr); P != E; ++P)
             Lin.insert(*P);
     }
     else if (Ptr->isAggregate()) {
@@ -380,7 +380,7 @@ void unionRefLoadInst(LivenessSet& Lin, PointsToNode *Ptr, PointsToNode *Load, L
     }
 }
 
-void unionRefStoreInst(LivenessSet &Lin, PointsToNode *Ptr, PointsToNode *Value, LivenessSet *Lout, PointsToRelation *Ain) {
+void unionRefStoreInst(LivenessSet &Lin, PointsToNode *Ptr, PointsToNode *Value, LivenessSet &Lout, PointsToRelation &Ain) {
     if (!Ptr->isAggregate() && !Value->isAggregate()) {
         Lin.insert(Ptr);
 
@@ -432,8 +432,8 @@ void unionRefStoreInst(LivenessSet &Lin, PointsToNode *Ptr, PointsToNode *Value,
 
 void LivenessPointsTo::unionRef(LivenessSet& Lin,
                                 const Instruction *I,
-                                LivenessSet* Lout,
-                                PointsToRelation* Ain) {
+                                LivenessSet& Lout,
+                                PointsToRelation& Ain) {
     if (const LoadInst *LI = dyn_cast<LoadInst>(I)) {
         // We only consider the pointer and the possible values in memory to be
         // ref'd if the load is live.
@@ -505,14 +505,14 @@ void unionDescendants(SmallVector<std::pair<IndexList, PointsToNode *>, 8> &S, c
     }
 }
 
-void unionPointeesWithDescendants(SmallVector<std::pair<IndexList, PointsToNode *>, 8> &Pointees, PointsToRelation *Ain, const IndexList &L, PointsToNode *N) {
+void unionPointeesWithDescendants(SmallVector<std::pair<IndexList, PointsToNode *>, 8> &Pointees, PointsToRelation &Ain, const IndexList &L, PointsToNode *N) {
     if (isa<UnknownPointsToNode>(N)) {
         // Assume here that ?-->?.
         Pointees.push_back({L, N});
         return;
     }
 
-    for (auto P = Ain->pointee_begin(N), E = Ain->pointee_end(N); P != E; ++P)
+    for (auto P = Ain.pointee_begin(N), E = Ain.pointee_end(N); P != E; ++P)
         unionDescendants(Pointees, L, *P);
 
     for (auto *Child : N->children) {
@@ -524,12 +524,12 @@ void unionPointeesWithDescendants(SmallVector<std::pair<IndexList, PointsToNode 
     }
 }
 
-void unionRelationApplicationWithDescendants(SmallVector<std::pair<IndexList, PointsToNode *>, 8> &Pointees, PointsToRelation *Ain, const SmallVector<std::pair<IndexList, PointsToNode *>, 8> &S) {
+void unionRelationApplicationWithDescendants(SmallVector<std::pair<IndexList, PointsToNode *>, 8> &Pointees, PointsToRelation &Ain, const SmallVector<std::pair<IndexList, PointsToNode *>, 8> &S) {
     for (auto P : S)
         unionPointeesWithDescendants(Pointees, Ain, P.first, P.second);
 }
 
-void insertNewPairsLoadInst(PointsToRelation &Aout, PointsToNode *Load, PointsToNode *Ptr, PointsToNode *Unknown, PointsToRelation *Ain, LivenessSet *Lout) {
+void insertNewPairsLoadInst(PointsToRelation &Aout, PointsToNode *Load, PointsToNode *Ptr, PointsToNode *Unknown, PointsToRelation &Ain, LivenessSet &Lout) {
     if (!Load->isAggregate()) {
         if (!isLive(Load, Lout))
             return;
@@ -540,12 +540,12 @@ void insertNewPairsLoadInst(PointsToRelation &Aout, PointsToNode *Load, PointsTo
             Aout.insert({Load, Unknown});
         else {
             std::set<PointsToNode *> t;
-            for (auto P = Ain->pointee_begin(Ptr), E = Ain->pointee_end(Ptr); P != E; ++P) {
+            for (auto P = Ain.pointee_begin(Ptr), E = Ain.pointee_end(Ptr); P != E; ++P) {
                 if (isa<UnknownPointsToNode>(*P))
                     Aout.insert({Load, Unknown});
                 t.insert(*P);
             }
-            for (auto P = Ain->restriction_begin(t), E = Ain->restriction_end(t); P != E; ++P)
+            for (auto P = Ain.restriction_begin(t), E = Ain.restriction_end(t); P != E; ++P)
                 Aout.insert(makePointsToPair(Load, P->second));
         }
     }
@@ -582,16 +582,16 @@ void insertNewPairsLoadInst(PointsToRelation &Aout, PointsToNode *Load, PointsTo
     }
 }
 
-void insertNewPairsStoreInst(PointsToRelation &Aout, PointsToNode *Ptr, PointsToNode *Value, PointsToNode *Unknown, PointsToRelation *Ain, LivenessSet *Lout) {
+void insertNewPairsStoreInst(PointsToRelation &Aout, PointsToNode *Ptr, PointsToNode *Value, PointsToNode *Unknown, PointsToRelation &Ain, LivenessSet &Lout) {
     bool insertUnknowns = false;
     if (!Ptr->isAggregate() && !Value->isAggregate()) {
-        for (auto P = Ain->pointee_begin(Ptr), PE = Ain->pointee_end(Ptr); P != PE; ++P) {
+        for (auto P = Ain.pointee_begin(Ptr), PE = Ain.pointee_end(Ptr); P != PE; ++P) {
             if (isa<UnknownPointsToNode>(Ptr)) {
                 insertUnknowns = true;
                 continue;
             }
-            if (Lout->find(*P) != Lout->end())
-                for (auto Q = Ain->pointee_begin(Value), QE = Ain->pointee_end(Value); Q != QE; ++Q)
+            if (Lout.find(*P) != Lout.end())
+                for (auto Q = Ain.pointee_begin(Value), QE = Ain.pointee_end(Value); Q != QE; ++Q)
                     Aout.insert(makePointsToPair(*P, *Q));
         }
     }
@@ -605,7 +605,7 @@ void insertNewPairsStoreInst(PointsToRelation &Aout, PointsToNode *Ptr, PointsTo
                 insertUnknowns = true;
                 continue;
             }
-            if (Lout->find(P.second) != Lout->end()) {
+            if (Lout.find(P.second) != Lout.end()) {
                 for (auto Q : valuePointees) {
                     switch (matchIndexLists(P.first, Q.first)) {
                         case Exact:
@@ -633,17 +633,17 @@ void insertNewPairsStoreInst(PointsToRelation &Aout, PointsToNode *Ptr, PointsTo
         // If Ptr points to ?, then we don't know what anything points to after
         // this instruction. Normally Lout would be empty (everything is
         // killed), but summary nodes cannot be killed.
-        for (auto I = Lout->begin(), E = Lout->end(); I != E; ++I)
+        for (auto I = Lout.begin(), E = Lout.end(); I != E; ++I)
             Aout.insert({*I, Unknown});
     }
 }
 
-void insertNewPairsAssignment(PointsToRelation &Aout, PointsToNode *L, PointsToNode *R, PointsToNode *Unknown, PointsToRelation *Ain, LivenessSet *Lout) {
+void insertNewPairsAssignment(PointsToRelation &Aout, PointsToNode *L, PointsToNode *R, PointsToNode *Unknown, PointsToRelation &Ain, LivenessSet &Lout) {
     if (!L->isAggregate() && !R->isAggregate()) {
-        if (Lout->find(L) == Lout->end())
+        if (Lout.find(L) == Lout.end())
             return;
 
-        for (auto P = Ain->pointee_begin(R), E = Ain->pointee_end(R); P != E; ++P)
+        for (auto P = Ain.pointee_begin(R), E = Ain.pointee_end(R); P != E; ++P)
             Aout.insert(makePointsToPair(L, *P));
     }
     else {
@@ -651,7 +651,7 @@ void insertNewPairsAssignment(PointsToRelation &Aout, PointsToNode *L, PointsToN
         IndexList l;
         unionPointeesWithDescendants(pointees, Ain, l, R);
         for (auto D : getDescendants(L)) {
-            if (Lout->find(D.second) != Lout->end()) {
+            if (Lout.find(D.second) != Lout.end()) {
                 for (auto P : pointees) {
                     switch (matchIndexLists(D.first, P.first)) {
                         case Exact:
@@ -676,7 +676,7 @@ void insertNewPairsAssignment(PointsToRelation &Aout, PointsToNode *L, PointsToN
     }
 }
 
-void LivenessPointsTo::insertNewPairs(PointsToRelation &Aout, const Instruction *I, PointsToRelation *Ain, LivenessSet *Lout) {
+void LivenessPointsTo::insertNewPairs(PointsToRelation &Aout, const Instruction *I, PointsToRelation &Ain, LivenessSet &Lout) {
     PointsToNode *Unknown = factory.getUnknown();
     if (const LoadInst *LI = dyn_cast<LoadInst>(I)) {
         PointsToNode *Load = factory.getNode(LI);
@@ -713,12 +713,12 @@ void LivenessPointsTo::insertNewPairs(PointsToRelation &Aout, const Instruction 
             return;
         }
 
-        if (Lout->find(N) == Lout->end())
+        if (Lout.find(N) == Lout.end())
             return;
 
         assert(GEP->hasAllConstantIndices());
 
-        for (auto P = Ain->pointee_begin(Ptr), E = Ain->pointee_end(Ptr); P != E; ++P) {
+        for (auto P = Ain.pointee_begin(Ptr), E = Ain.pointee_end(Ptr); P != E; ++P) {
             if (isa<UnknownPointsToNode>(*P) || !(*P)->isFieldSensitive()) {
                 // We don't know what the pointer points to or we don't treat the pointee field sensitively, so we don't know what
                 // the GEP points to.
@@ -746,41 +746,41 @@ bool hasPointee(PointsToRelation &S, PointsToNode *N) {
     return S.pointee_begin(N) != S.pointee_end(N);
 }
 
-void LivenessPointsTo::computeLout(const Instruction *I, LivenessSet* Lout, IntraproceduralPointsTo *Result) {
+void LivenessPointsTo::computeLout(const Instruction *I, LivenessSet& Lout, IntraproceduralPointsTo &Result) {
     if (isa<ReturnInst>(I)) {
         // After a return instruction, nothing is live.
     }
     else if (const TerminatorInst *TI = dyn_cast<TerminatorInst>(I)) {
         // If this instruction is a terminator, it may have multiple
         // successors.
-        Lout->clear();
+        Lout.clear();
         for (unsigned i = 0; i < TI->getNumSuccessors(); i++) {
             Instruction *Succ = TI->getSuccessor(i)->begin();
-            auto succ_result = Result->find(Succ);
-            assert(succ_result != Result->end());
+            auto succ_result = Result.find(Succ);
+            assert(succ_result != Result.end());
             auto succ_lin = succ_result->second.first;
-            Lout->insertAll(*succ_lin);
+            Lout.insertAll(*succ_lin);
         }
     }
     else {
         // If this instruction is not a terminator, it has exactly one
         // successor -- the next instruction in the function.
         const Instruction *Succ = getNextInstruction(I);
-        auto succ_result = Result->find(Succ);
-        assert(succ_result != Result->end());
+        auto succ_result = Result.find(Succ);
+        assert(succ_result != Result.end());
         auto succ_lin = succ_result->second.first;
-        if (*succ_lin != *Lout) {
-            Lout->clear();
-            Lout->insertAll(*succ_lin);
+        if (*succ_lin != Lout) {
+            Lout.clear();
+            Lout.insertAll(*succ_lin);
         }
     }
 }
 
-bool LivenessPointsTo::computeAin(const Instruction *I, const Function *F, PointsToRelation *Ain, LivenessSet *Lin, IntraproceduralPointsTo *Result, bool InsertAtFirstInstruction) {
+bool LivenessPointsTo::computeAin(const Instruction *I, const Function *F, PointsToRelation &Ain, LivenessSet &Lin, IntraproceduralPointsTo *Result, bool InsertAtFirstInstruction) {
     // Compute ain for the current instruction.
     PointsToRelation s;
     if (I == &*inst_begin(F)) {
-        s = *Ain;
+        s = Ain;
         if (InsertAtFirstInstruction) {
             // If this is the first instruction of the function, then apart from
             // the data in entry, we don't know what anything points to. ain
@@ -788,7 +788,7 @@ bool LivenessPointsTo::computeAin(const Instruction *I, const Function *F, Point
             // If this function is being analysed as a callee, then don't insert
             // any pairs of the form x-->? because we might find out what x
             // points to later.
-            for (PointsToNode *N : *Lin) {
+            for (PointsToNode *N : Lin) {
                 if (!hasPointee(s, N)) {
                     std::pair<PointsToNode *, PointsToNode *> p =
                         std::make_pair(N, factory.getUnknown());
@@ -811,7 +811,7 @@ bool LivenessPointsTo::computeAin(const Instruction *I, const Function *F, Point
                 auto pred_result = Result->find(Pred);
                 assert(pred_result != Result->end());
                 PointsToRelation *PredAout = pred_result->second.second;
-                s.unionRelationRestriction(PredAout, Lin);
+                s.unionRelationRestriction(*PredAout, Lin);
             }
         }
         else {
@@ -819,19 +819,19 @@ bool LivenessPointsTo::computeAin(const Instruction *I, const Function *F, Point
             auto pred_result = Result->find(Pred);
             assert(pred_result != Result->end());
             PointsToRelation *PredAout = pred_result->second.second;
-            s.unionRelationRestriction(PredAout, Lin);
+            s.unionRelationRestriction(*PredAout, Lin);
         }
     }
-    if (s != *Ain) {
-        Ain->clear();
-        Ain->insertAll(s);
+    if (s != Ain) {
+        Ain.clear();
+        Ain.insertAll(s);
         return true;
     }
 
     return false;
 }
 
-bool LivenessPointsTo::getCalledFunctions(SmallVector<const Function *, 8> &Result, const CallInst *CI, PointsToRelation *Ain) {
+bool LivenessPointsTo::getCalledFunctions(SmallVector<const Function *, 8> &Result, const CallInst *CI, PointsToRelation &Ain) {
     if (CI->getCalledFunction() != nullptr) {
         Result.push_back(CI->getCalledFunction());
         return false;
@@ -839,7 +839,7 @@ bool LivenessPointsTo::getCalledFunctions(SmallVector<const Function *, 8> &Resu
 
     // Use Ain to work out what the called value can point to.
     PointsToNode *CalledValue = factory.getNode(CI->getCalledValue());
-    for (auto I = Ain->pointee_begin(CalledValue), E = Ain->pointee_end(CalledValue); I != E; ++I) {
+    for (auto I = Ain.pointee_begin(CalledValue), E = Ain.pointee_end(CalledValue); I != E; ++I) {
         if (isa<UnknownPointsToNode>(*I))
             return true;
 
@@ -855,7 +855,7 @@ bool LivenessPointsTo::getCalledFunctions(SmallVector<const Function *, 8> &Resu
     return false;
 }
 
-void LivenessPointsTo::addLinUnknownCalledFunction(LivenessSet &N, const CallString &CS, const CallInst *CI, PointsToRelation *Ain, LivenessSet *Lout) {
+void LivenessPointsTo::addLinUnknownCalledFunction(LivenessSet &N, const CallString &CS, const CallInst *CI, PointsToRelation &Ain, LivenessSet &Lout) {
     // We reach this point if we will never know which function is called. Just
     // assume the worst case -- the function may invalidate or use anything that
     // it has access to.
@@ -867,12 +867,12 @@ void LivenessPointsTo::addLinUnknownCalledFunction(LivenessSet &N, const CallStr
     LivenessSet reachable, killable;
     insertReachableUnknownFunction(CS, CI, reachable, killable, Ain, EverythingReachable);
 
-    LivenessSet n = *Lout;
+    LivenessSet n = Lout;
 
     if (EverythingReachable == Yes) {
         // If everything is reachable, then everything might be
         // ref'd, so insert as much as possible into n.
-        Ain->insertEverythingInto(n);
+        Ain.insertEverythingInto(n);
         n.insertAll(reachable);
     }
     else {
@@ -887,7 +887,7 @@ void LivenessPointsTo::addLinUnknownCalledFunction(LivenessSet &N, const CallStr
     N.insertAll(n);
 }
 
-void LivenessPointsTo::addLinCalledDeclaration(LivenessSet &N, const CallString &CS, const CallInst *CI, PointsToRelation *Ain, LivenessSet *Lout) {
+void LivenessPointsTo::addLinCalledDeclaration(LivenessSet &N, const CallString &CS, const CallInst *CI, PointsToRelation &Ain, LivenessSet &Lout) {
     // We reach this point if we have a declaration. Just assume the worst case
     // -- the function may invalidate or use anything that it has access to.
 
@@ -898,12 +898,12 @@ void LivenessPointsTo::addLinCalledDeclaration(LivenessSet &N, const CallString 
     LivenessSet reachable, killable;
     insertReachableDeclaration(CS, CI, reachable, killable, Ain, EverythingReachable);
 
-    LivenessSet n = *Lout;
+    LivenessSet n = Lout;
 
     if (EverythingReachable == Yes) {
         // If everything is reachable, then everything might be
         // ref'd, so insert as much as possible into n.
-        Ain->insertEverythingInto(n);
+        Ain.insertEverythingInto(n);
         n.insertAll(reachable);
     }
     else {
@@ -918,7 +918,7 @@ void LivenessPointsTo::addLinCalledDeclaration(LivenessSet &N, const CallString 
     N.insertAll(n);
 }
 
-void LivenessPointsTo::addLinAnalysableCalledFunction(LivenessSet &N, const Function *Called, const CallString &CS, const CallInst *CI, LivenessSet *Lout) {
+void LivenessPointsTo::addLinAnalysableCalledFunction(LivenessSet &N, const Function *Called, const CallString &CS, const CallInst *CI, LivenessSet &Lout) {
     CallString newCS = CS.addCallSite(CI);
     // The set of values that are returned from the function.
     std::set<PointsToNode *> returnValues = getReturnValues(Called);
@@ -928,7 +928,7 @@ void LivenessPointsTo::addLinAnalysableCalledFunction(LivenessSet &N, const Func
     auto calledFunctionAout = calledFunctionResult.second;
 
     LivenessSet n = replaceFormalArgumentsWithActual(CS, Called, CI, calledFunctionLin, Lout);
-    for (auto I = Lout->begin(), E = Lout->end(); I != E; ++I) {
+    for (auto I = Lout.begin(), E = Lout.end(); I != E; ++I) {
         if ((*I)->isSummaryNode(CS)) {
             // We shouldn't allow the function call to kill this
             // node.
@@ -940,7 +940,7 @@ void LivenessPointsTo::addLinAnalysableCalledFunction(LivenessSet &N, const Func
     N.insertAll(n);
 }
 
-bool LivenessPointsTo::computeLin(const CallString &CS, const Instruction *I, PointsToRelation *Ain, LivenessSet *Lin, LivenessSet *Lout) {
+bool LivenessPointsTo::computeLin(const CallString &CS, const Instruction *I, PointsToRelation &Ain, LivenessSet &Lin, LivenessSet &Lout) {
     if (const CallInst *CI = dyn_cast<CallInst>(I)) {
         PointsToNode *CINode = factory.getNode(CI);
 
@@ -977,9 +977,9 @@ bool LivenessPointsTo::computeLin(const CallString &CS, const Instruction *I, Po
         // If the two sets are the same, then no changes need to be made to lin,
         // so don't do anything here. Otherwise, we need to update lin and add
         // the predecessors of the current instruction to the worklist.
-        if (n != *Lin) {
-            Lin->clear();
-            Lin->insertAll(n);
+        if (n != Lin) {
+            Lin.clear();
+            Lin.insertAll(n);
             return true;
         }
         else
@@ -988,15 +988,15 @@ bool LivenessPointsTo::computeLin(const CallString &CS, const Instruction *I, Po
     else {
         // Compute lin for the current instruction.
         LivenessSet n;
-        n.insertAll(*Lout);
+        n.insertAll(Lout);
         subtractKill(CS, n, I, Ain);
         unionRef(n, I, Lout, Ain);
         // If the two sets are the same, then no changes need to be made to lin,
         // so don't do anything here. Otherwise, we need to update lin and add
         // the predecessors of the current instruction to the worklist.
-        if (n != *Lin) {
-            Lin->clear();
-            Lin->insertAll(n);
+        if (n != Lin) {
+            Lin.clear();
+            Lin.insertAll(n);
             return true;
         }
         else
@@ -1004,7 +1004,7 @@ bool LivenessPointsTo::computeLin(const CallString &CS, const Instruction *I, Po
     }
 }
 
-void LivenessPointsTo::addAoutUnknownCalledFunction(PointsToRelation &S, const CallString &CS, const CallInst *CI, PointsToRelation *Ain, LivenessSet *Lout) {
+void LivenessPointsTo::addAoutUnknownCalledFunction(PointsToRelation &S, const CallString &CS, const CallInst *CI, PointsToRelation &Ain, LivenessSet &Lout) {
     PointsToNode *CINode = factory.getNode(CI);
 
     // Anything that can be modified by the function (including the return value
@@ -1021,16 +1021,16 @@ void LivenessPointsTo::addAoutUnknownCalledFunction(PointsToRelation &S, const C
         reachable.insert(CINode);
     PointsToRelation s;
     if (EverythingReachable == Yes) {
-        for (PointsToNode *N : *Lout)
+        for (PointsToNode *N : Lout)
             s.insert(std::make_pair(N, factory.getUnknown()));
     }
     else if (EverythingReachable == No) {
-        if (Lout->find(CINode) != Lout->end())
+        if (Lout.find(CINode) != Lout.end())
             s.insert(std::make_pair(CINode, factory.getUnknown()));
         for (PointsToNode *N : killable)
-            if (Lout->find(N) != Lout->end())
+            if (Lout.find(N) != Lout.end())
                 s.insert(std::make_pair(N, factory.getUnknown()));
-        for (auto P = Ain->restriction_begin(Lout), E = Ain->restriction_end(Lout); P != E; ++P)
+        for (auto P = Ain.restriction_begin(Lout), E = Ain.restriction_end(Lout); P != E; ++P)
             if (killable.find(P->first) == killable.end())
                 s.insert(*P);
     }
@@ -1044,7 +1044,7 @@ void LivenessPointsTo::addAoutUnknownCalledFunction(PointsToRelation &S, const C
     S.insertAll(s);
 }
 
-void LivenessPointsTo::addAoutCalledDeclaration(PointsToRelation &S, const CallString &CS, const CallInst *CI, PointsToRelation *Ain, LivenessSet *Lout) {
+void LivenessPointsTo::addAoutCalledDeclaration(PointsToRelation &S, const CallString &CS, const CallInst *CI, PointsToRelation &Ain, LivenessSet &Lout) {
     PointsToNode *CINode = factory.getNode(CI);
 
     // Anything that can be modified by the function (including the return value
@@ -1061,16 +1061,16 @@ void LivenessPointsTo::addAoutCalledDeclaration(PointsToRelation &S, const CallS
         reachable.insert(CINode);
     PointsToRelation s;
     if (EverythingReachable == Yes) {
-        for (PointsToNode *N : *Lout)
+        for (PointsToNode *N : Lout)
             s.insert(std::make_pair(N, factory.getUnknown()));
     }
     else if (EverythingReachable == No) {
-        if (Lout->find(CINode) != Lout->end())
+        if (Lout.find(CINode) != Lout.end())
             s.insert(std::make_pair(CINode, factory.getUnknown()));
         for (PointsToNode *N : killable)
-            if (Lout->find(N) != Lout->end())
+            if (Lout.find(N) != Lout.end())
                 s.insert(std::make_pair(N, factory.getUnknown()));
-        for (auto P = Ain->restriction_begin(Lout), E = Ain->restriction_end(Lout); P != E; ++P)
+        for (auto P = Ain.restriction_begin(Lout), E = Ain.restriction_end(Lout); P != E; ++P)
             if (killable.find(P->first) == killable.end())
                 s.insert(*P);
     }
@@ -1084,7 +1084,7 @@ void LivenessPointsTo::addAoutCalledDeclaration(PointsToRelation &S, const CallS
     S.insertAll(s);
 }
 
-void LivenessPointsTo::addAoutAnalysableCalledFunction(PointsToRelation &S, const Function *Called, const CallString &CS, const CallInst *CI, PointsToRelation *Ain, LivenessSet *Lout) {
+void LivenessPointsTo::addAoutAnalysableCalledFunction(PointsToRelation &S, const Function *Called, const CallString &CS, const CallInst *CI, PointsToRelation &Ain, LivenessSet &Lout) {
     CallString newCS = CS.addCallSite(CI);
     // The set of values that are returned from the function.
     std::set<PointsToNode *> returnValues = getReturnValues(Called);
@@ -1094,7 +1094,7 @@ void LivenessPointsTo::addAoutAnalysableCalledFunction(PointsToRelation &S, cons
     auto calledFunctionAout = calledFunctionResult.second;
 
     PointsToRelation s = replaceReturnValuesWithCallInst(CI, calledFunctionAout, returnValues, Lout);
-    for (auto I = Ain->begin(), E = Ain->end(); I != E; ++I) {
+    for (auto I = Ain.begin(), E = Ain.end(); I != E; ++I) {
         if (I->first->isSummaryNode(CS)) {
             // We shouldn't allow the function call to remove
             // this pair. (Actually it is never *removed*, but
@@ -1106,7 +1106,7 @@ void LivenessPointsTo::addAoutAnalysableCalledFunction(PointsToRelation &S, cons
     S.insertAll(s);
 }
 
-bool LivenessPointsTo::computeAout(const CallString &CS, const Instruction *I, PointsToRelation *Ain, PointsToRelation *Aout, LivenessSet *Lout) {
+bool LivenessPointsTo::computeAout(const CallString &CS, const Instruction *I, PointsToRelation &Ain, PointsToRelation &Aout, LivenessSet &Lout) {
     if (const CallInst *CI = dyn_cast<CallInst>(I)) {
         if (CI->doesNotReturn()) {
             // If the function does not return, then it doesn't matter what
@@ -1129,9 +1129,9 @@ bool LivenessPointsTo::computeAout(const CallString &CS, const Instruction *I, P
             }
         }
 
-        if (s != *Aout) {
-            Aout->clear();
-            Aout->insertAll(s);
+        if (s != Aout) {
+            Aout.clear();
+            Aout.insertAll(s);
             return true;
         }
         else
@@ -1140,13 +1140,13 @@ bool LivenessPointsTo::computeAout(const CallString &CS, const Instruction *I, P
     else {
         PointsToRelation s;
         // Compute aout for the current instruction.
-        LivenessSet notKilled = *Lout;
+        LivenessSet notKilled = Lout;
         subtractKill(CS, notKilled, I, Ain);
-        s.unionRelationRestriction(Ain, &notKilled);
+        s.unionRelationRestriction(Ain, notKilled);
         insertNewPairs(s, I, Ain, Lout);
-        if (s != *Aout) {
-            Aout->clear();
-            Aout->insertAll(s);
+        if (s != Aout) {
+            Aout.clear();
+            Aout.insertAll(s);
             return true;
         }
         else
@@ -1154,7 +1154,7 @@ bool LivenessPointsTo::computeAout(const CallString &CS, const Instruction *I, P
     }
 }
 
-void LivenessPointsTo::insertReachableDeclaration(const CallString &CS, const CallInst *CI, LivenessSet &Reachable, LivenessSet &Killable, PointsToRelation *Ain, YesNoMaybe &EverythingReachable) {
+void LivenessPointsTo::insertReachableDeclaration(const CallString &CS, const CallInst *CI, LivenessSet &Reachable, LivenessSet &Killable, PointsToRelation &Ain, YesNoMaybe &EverythingReachable) {
     std::set<PointsToNode *> seen;
     // FIXME: Can globals be accessed by the function?
     // This is roughly the mark phase from mark-and-sweep garbage collection. We
@@ -1164,7 +1164,7 @@ void LivenessPointsTo::insertReachableDeclaration(const CallString &CS, const Ca
         if (seen.insert(N).second) {
             Reachable.insert(N);
             bool noPointees = true;
-            for (auto P = Ain->pointee_begin(N), E = Ain->pointee_end(N); P != E; ++P) {
+            for (auto P = Ain.pointee_begin(N), E = Ain.pointee_end(N); P != E; ++P) {
                 if (isa<UnknownPointsToNode>(*P)) {
                     EverythingReachable = Yes;
                     return;
@@ -1192,7 +1192,7 @@ void LivenessPointsTo::insertReachableDeclaration(const CallString &CS, const Ca
         insertReachable(factory.getNode(V));
 }
 
-void LivenessPointsTo::insertReachableUnknownFunction(const CallString &CS, const CallInst *CI, LivenessSet &Reachable, LivenessSet &Killable, PointsToRelation *Ain, YesNoMaybe &EverythingReachable) {
+void LivenessPointsTo::insertReachableUnknownFunction(const CallString &CS, const CallInst *CI, LivenessSet &Reachable, LivenessSet &Killable, PointsToRelation &Ain, YesNoMaybe &EverythingReachable) {
     // TODO: Do we need to insert globals?
 
     std::set<PointsToNode *> seen;
@@ -1203,7 +1203,7 @@ void LivenessPointsTo::insertReachableUnknownFunction(const CallString &CS, cons
         if (seen.insert(N).second) {
             Reachable.insert(N);
             bool noPointees = true;
-            for (auto P = Ain->pointee_begin(N), E = Ain->pointee_end(N); P != E; ++P) {
+            for (auto P = Ain.pointee_begin(N), E = Ain.pointee_end(N); P != E; ++P) {
                 if (isa<UnknownPointsToNode>(*P)) {
                     EverythingReachable = Yes;
                     return;
@@ -1305,10 +1305,10 @@ LivenessSet LivenessPointsTo::computeFunctionExitLiveness(const CallInst *CI, Li
     return L;
 }
 
-PointsToRelation *LivenessPointsTo::replaceActualArgumentsWithFormal(const Function *Callee, const CallInst *CI, PointsToRelation *Ain) {
+PointsToRelation LivenessPointsTo::replaceActualArgumentsWithFormal(const Function *Callee, const CallInst *CI, PointsToRelation *Ain) {
     SmallVector<std::pair<PointsToNode *, PointsToNode *>, 8> ArgMap;
     auto Arg = Callee->arg_begin();
-    PointsToRelation *R = new PointsToRelation();
+    PointsToRelation R;
     for (Value *V : CI->arg_operands()) {
         PointsToNode *Node = factory.getNode(V);
         // FIXME: What about varargs functions?
@@ -1320,7 +1320,7 @@ PointsToRelation *LivenessPointsTo::replaceActualArgumentsWithFormal(const Funct
         if (Node->singlePointee()) {
             // These nodes won't be seen in the next loop, so insert the correct
             // pairs for them into Ain here.
-            R->insert(makePointsToPair(ANode, Node->getSinglePointee()));
+            R.insert(makePointsToPair(ANode, Node->getSinglePointee()));
         }
 
         ++Arg;
@@ -1332,15 +1332,15 @@ PointsToRelation *LivenessPointsTo::replaceActualArgumentsWithFormal(const Funct
             return P.first == I->first;
         });
         if (MapI != MapE)
-            R->insert(makePointsToPair(MapI->second, I->second));
+            R.insert(makePointsToPair(MapI->second, I->second));
         else
-            R->insert(*I);
+            R.insert(*I);
     }
 
     return R;
 }
 
-LivenessSet LivenessPointsTo::replaceFormalArgumentsWithActual(const CallString &CS, const Function *Callee, const CallInst *CI, LivenessSet &CalledFunctionLin, LivenessSet *Lout) {
+LivenessSet LivenessPointsTo::replaceFormalArgumentsWithActual(const CallString &CS, const Function *Callee, const CallInst *CI, LivenessSet &CalledFunctionLin, LivenessSet &Lout) {
     LivenessSet L;
     bool calleeInCallString = CI->getParent()->getParent() == Callee || CS.containsCallIn(Callee);
 
@@ -1381,23 +1381,23 @@ LivenessSet LivenessPointsTo::replaceFormalArgumentsWithActual(const CallString 
     // FIXME: What about varargs?
     for (Value *V : CI->arg_operands()) {
         PointsToNode *ArgNode = factory.getNode(V);
-        if (Lout->find(ArgNode) != Lout->end())
+        if (Lout.find(ArgNode) != Lout.end())
             L.insert(ArgNode);
     }
 
     return L;
 }
 
-PointsToRelation LivenessPointsTo::replaceReturnValuesWithCallInst(const CallInst *CI, PointsToRelation &Aout, std::set<PointsToNode *> &ReturnValues, LivenessSet *Lout) {
+PointsToRelation LivenessPointsTo::replaceReturnValuesWithCallInst(const CallInst *CI, PointsToRelation &Aout, std::set<PointsToNode *> &ReturnValues, LivenessSet &Lout) {
     PointsToNode *CINode = factory.getNode(CI);
-    bool CINodeLive = Lout->find(CINode) != Lout->end();
+    bool CINodeLive = Lout.find(CINode) != Lout.end();
     PointsToRelation R;
     for (auto I = Aout.begin(), E  = Aout.end(); I != E; ++I) {
         if (ReturnValues.find(I->first) != ReturnValues.end()) {
             if (CINodeLive)
                 R.insert(makePointsToPair(CINode, I->second));
         }
-        else if (Lout->find(I->first) != Lout->end())
+        else if (Lout.find(I->first) != Lout.end())
             R.insert(*I);
     }
     if (CINodeLive) {
@@ -1411,9 +1411,8 @@ PointsToRelation LivenessPointsTo::replaceReturnValuesWithCallInst(const CallIns
     return R;
 }
 
-void LivenessPointsTo::runOnFunction(const Function *F, const CallString &CS, IntraproceduralPointsTo *Result, PointsToRelation *EntryPointsTo, LivenessSet &ExitLiveness, bool MakeReturnValuesLive, SmallVector<std::tuple<const CallInst *, const Function *, PointsToRelation *, LivenessSet, bool>, 8> &Calls) {
+void LivenessPointsTo::runOnFunction(const Function *F, const CallString &CS, IntraproceduralPointsTo *Result, PointsToRelation &EntryPointsTo, LivenessSet &ExitLiveness, bool MakeReturnValuesLive, SmallVector<std::tuple<const CallInst *, const Function *, PointsToRelation, LivenessSet, bool>, 8> &Calls) {
     timesRanOnFunction++;
-    assert(EntryPointsTo != nullptr);
     assert(!F->isDeclaration() && "Can only run on definitions.");
 
     // The result of the function is lin and aout (since liveness is propagated
@@ -1430,19 +1429,26 @@ void LivenessPointsTo::runOnFunction(const Function *F, const CallString &CS, In
         // ExitLiveness, if it exists. If the instruction is the first in the
         // function, the points-to information before it is executed is exactly
         // that in EntryPointsTo.
+
         if (const ReturnInst *RI = dyn_cast<ReturnInst>(inst)) {
             LivenessSet *L = new LivenessSet();
             L->insertAll(ExitLiveness);
             if (RI->getReturnValue() != nullptr && MakeReturnValuesLive)
                 L->insert(factory.getNode(RI->getReturnValue()));
 
-            if (I == S)
-                nonresult.insert({inst, {L, EntryPointsTo}});
+            if (I == S) {
+                PointsToRelation *R = new PointsToRelation();
+                R->insertAll(EntryPointsTo);
+                nonresult.insert({inst, {L, R}});
+            }
             else
                 nonresult.insert({inst, {L, new PointsToRelation()}});
         }
-        else if (I == S)
-            nonresult.insert({inst, {new LivenessSet(), EntryPointsTo}});
+        else if (I == S) {
+            PointsToRelation *R = new PointsToRelation();
+            R->insertAll(EntryPointsTo);
+            nonresult.insert({inst, {new LivenessSet(), R}});
+        }
         else
             nonresult.insert({inst, {new LivenessSet(), new PointsToRelation()}});
 
@@ -1469,8 +1475,8 @@ void LivenessPointsTo::runOnFunction(const Function *F, const CallString &CS, In
         auto instruction_ain = instruction_nonresult->second.second;
         auto instruction_lin = instruction_result->second.first,
              instruction_lout = instruction_nonresult->second.first;
-        computeLout(&*I, instruction_lout, Result);
-        computeAin(&*I, F, instruction_ain, instruction_lin, Result, CS.isEmpty());
+        computeLout(&*I, *instruction_lout, *Result);
+        computeAin(&*I, F, *instruction_ain, *instruction_lin, Result, CS.isEmpty());
     }
 
     // Update points-to and liveness information until it converges.
@@ -1489,19 +1495,19 @@ void LivenessPointsTo::runOnFunction(const Function *F, const CallString &CS, In
         auto instruction_lin = instruction_result->second.first,
              instruction_lout = instruction_nonresult->second.first;
 
-        computeLout(I, instruction_lout, Result);
+        computeLout(I, *instruction_lout, *Result);
         // Lin depends on Lout, so this call needs to happen after computeLout
         // (or the current instruction should be added to the worklist when
         // computeLout returns true).
-        bool addPredsToWorklist = computeLin(CS, I, instruction_ain, instruction_lin, instruction_lout);
-        // Ain depends on Lin, so this call needs to happen after computeLin
+        bool addPredsToWorklist = computeLin(CS, I, *instruction_ain, *instruction_lin, *instruction_lout);
+        // Ain depends on Lin, so this call needs to 7happen after computeLin
         // (or the current instruction should be added to the worklist when
         // computeLin returns true).
-        bool addCurrToWorklist = computeAin(I, F, instruction_ain, instruction_lin, Result, CS.isEmpty());
+        bool addCurrToWorklist = computeAin(I, F, *instruction_ain, *instruction_lin, Result, CS.isEmpty());
         // Aout depends on Lout, so this call needs to happen after computeLout
         // (or the current instruction should be added to the worklist when
         // computeLout returns true).
-        bool addSuccsToWorklist = computeAout(CS, I, instruction_ain, instruction_aout, instruction_lout);
+        bool addSuccsToWorklist = computeAout(CS, I, *instruction_ain, *instruction_aout, *instruction_lout);
 
         // Add succs to worklist
         if (addSuccsToWorklist) {
@@ -1554,7 +1560,7 @@ void LivenessPointsTo::runOnFunction(const Function *F, const CallString &CS, In
             PointsToNode *CINode = factory.getNode(CI);
             CallString newCS = CS.addCallSite(&*I);
             SmallVector<const Function *, 8> CalledFunctions;
-            bool pointsToUnknown = getCalledFunctions(CalledFunctions, CI, Ain);
+            bool pointsToUnknown = getCalledFunctions(CalledFunctions, CI, *Ain);
 
             if (!pointsToUnknown) {
                 for (const Function *Called : CalledFunctions) {
@@ -1575,26 +1581,42 @@ void LivenessPointsTo::runOnFunction(const Function *F, const CallString &CS, In
             }
         }
     }
+
+    for (auto P : nonresult) {
+        LivenessSet *L = P.second.first;
+        PointsToRelation *R = P.second.second;
+        delete L;
+        delete R;
+    }
 }
 
 bool LivenessPointsTo::runOnFunctionAt(const CallString& CS,
                                        const Function *F,
-                                       PointsToRelation *EntryPointsTo,
+                                       PointsToRelation &EntryPointsTo,
                                        LivenessSet &ExitLiveness,
                                        bool MakeReturnValuesLive,
                                        bool AlwaysRerun) {
     bool Changed = true;
-    IntraproceduralPointsTo *Out = data.getPointsTo(CS, F, *EntryPointsTo, ExitLiveness, Changed);
+    IntraproceduralPointsTo *Out = data.getPointsTo(CS, F, EntryPointsTo, ExitLiveness, Changed);
     if (!AlwaysRerun && !Changed) {
         // If the boundary information has not changed since the analysis was
         // last run on this function, then there is no need to run it again.
         return false;
     }
-    IntraproceduralPointsTo *Copy = copyPointsToMap(Out);
-    SmallVector<std::tuple<const CallInst *, const Function *, PointsToRelation *, LivenessSet, bool>, 8> Calls;
+    IntraproceduralPointsTo Copy = copyPointsToMap(Out);
+    SmallVector<std::tuple<const CallInst *, const Function *, PointsToRelation, LivenessSet, bool>, 8> Calls;
     runOnFunction(F, CS, Out, EntryPointsTo, ExitLiveness, MakeReturnValuesLive, Calls);
 
-    if (arePointsToMapsEqual(F, Out, Copy)) {
+    bool eq = arePointsToMapsEqual(F, Out, Copy);
+
+    for (auto P : Copy) {
+        LivenessSet *L = P.second.first;
+        PointsToRelation *R = P.second.second;
+        delete L;
+        delete R;
+    }
+
+    if (eq) {
         // If there is a prefix with the same information, then make it
         // cyclic. If a cyclic call string is created and then the analysis is
         // rerun with a matching call string, it is removed; this deals with
@@ -1612,7 +1634,7 @@ bool LivenessPointsTo::runOnFunctionAt(const CallString& CS,
         for (auto C : Calls) {
             const CallInst *I;
             const Function *F;
-            PointsToRelation *PT;
+            PointsToRelation PT;
             LivenessSet L;
             bool RVL;
             std::tie(I, F, PT, L, RVL) = C;
@@ -1640,6 +1662,7 @@ void LivenessPointsTo::runOnModule(Module &M) {
     for (Function &F : M)
         if (!F.isDeclaration()) {
             LivenessSet L;
-            runOnFunctionAt(CallString::empty(), &F, new PointsToRelation(), L, true, true);
+            PointsToRelation R;
+            runOnFunctionAt(CallString::empty(), &F, R, L, true, true);
         }
 }

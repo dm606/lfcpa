@@ -162,9 +162,9 @@ public:
         return s.insert(N).second;
     }
 
-    inline void unionRelationRestriction(PointsToRelation *R, LivenessSet *S) {
-        auto RI = R->s.begin(), RE = R->s.end();
-        auto SI = S->begin(), SE = S->end();
+    inline void unionRelationRestriction(PointsToRelation &R, LivenessSet &S) {
+        auto RI = R.s.begin(), RE = R.s.end();
+        auto SI = S.begin(), SE = S.end();
         auto I = s.begin(), E = s.end();
         std::less<PointsToNode *> ln;
         std::less<std::pair<PointsToNode *, PointsToNode *>> l;
