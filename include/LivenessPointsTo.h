@@ -28,7 +28,8 @@ private:
     bool getCalledFunctions(SmallVector<const Function *, 8> &, const CallInst *, PointsToRelation &);
     void addLinUnknownCalledFunction(LivenessSet &, const CallString &, const CallInst *, PointsToRelation &, LivenessSet &);
     void addLinCalledDeclaration(LivenessSet &, const CallString &, const CallInst *, PointsToRelation &, LivenessSet &);
-    void addLinAnalysableCalledFunction(LivenessSet &, const Function *, const CallString &, const CallInst *, LivenessSet &);
+    void addLinAnalysableCalledFunction(LivenessSet &, const Function *, const CallString &, const CallInst *, LivenessSet &, LivenessSet &);
+    LivenessSet findRelevantNodes(const CallInst *, PointsToRelation &, LivenessSet &);
     bool computeLin(const CallString &, const Instruction *, PointsToRelation &, LivenessSet &, LivenessSet &);
     void addAoutUnknownCalledFunction(PointsToRelation &, const CallString &, const CallInst *, PointsToRelation &, LivenessSet &);
     void addAoutCalledDeclaration(PointsToRelation &, const CallString &, const CallInst *, PointsToRelation &, LivenessSet &);

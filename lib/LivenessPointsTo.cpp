@@ -534,20 +534,14 @@ void insertNewPairsLoadInst(PointsToRelation &Aout, PointsToNode *Load, PointsTo
         if (!isLive(Load, Lout))
             return;
 
-        // If the pointer is an aggregate node, we don't know what the result of
-        // the load points to.
-        if (Ptr->isAggregate())
-            Aout.insert({Load, Unknown});
-        else {
-            std::set<PointsToNode *> t;
-            for (auto P = Ain.pointee_begin(Ptr), E = Ain.pointee_end(Ptr); P != E; ++P) {
-                if (isa<UnknownPointsToNode>(*P))
-                    Aout.insert({Load, Unknown});
-                t.insert(*P);
-            }
-            for (auto P = Ain.restriction_begin(t), E = Ain.restriction_end(t); P != E; ++P)
-                Aout.insert(makePointsToPair(Load, P->second));
+        std::set<PointsToNode *> t;
+        for (auto P = Ain.pointee_begin(Ptr), E = Ain.pointee_end(Ptr); P != E; ++P) {
+            if (isa<UnknownPointsToNode>(*P))
+                Aout.insert({Load, Unknown});
+            t.insert(*P);
         }
+        for (auto P = Ain.restriction_begin(t), E = Ain.restriction_end(t); P != E; ++P)
+            Aout.insert(makePointsToPair(Load, P->second));
     }
     else {
         SmallVector<std::pair<IndexList, PointsToNode *>, 8> p, pointees;
@@ -770,6 +764,7 @@ void LivenessPointsTo::computeLout(const Instruction *I, LivenessSet& Lout, Intr
         assert(succ_result != Result.end());
         auto succ_lin = succ_result->second.first;
         if (*succ_lin != Lout) {
+            assert(succ_lin->isSubset(Lout));
             Lout.clear();
             Lout.insertAll(*succ_lin);
         }
@@ -823,6 +818,7 @@ bool LivenessPointsTo::computeAin(const Instruction *I, const Function *F, Point
         }
     }
     if (s != Ain) {
+        assert(s.isSubset(Ain));
         Ain.clear();
         Ain.insertAll(s);
         return true;
@@ -918,7 +914,7 @@ void LivenessPointsTo::addLinCalledDeclaration(LivenessSet &N, const CallString 
     N.insertAll(n);
 }
 
-void LivenessPointsTo::addLinAnalysableCalledFunction(LivenessSet &N, const Function *Called, const CallString &CS, const CallInst *CI, LivenessSet &Lout) {
+void LivenessPointsTo::addLinAnalysableCalledFunction(LivenessSet &N, const Function *Called, const CallString &CS, const CallInst *CI, LivenessSet &Lout, LivenessSet &Relevant) {
     CallString newCS = CS.addCallSite(CI);
     // The set of values that are returned from the function.
     std::set<PointsToNode *> returnValues = getReturnValues(Called);
@@ -927,7 +923,7 @@ void LivenessPointsTo::addLinAnalysableCalledFunction(LivenessSet &N, const Func
     auto calledFunctionLin = calledFunctionResult.first;
     auto calledFunctionAout = calledFunctionResult.second;
 
-    LivenessSet n = replaceFormalArgumentsWithActual(CS, Called, CI, calledFunctionLin, Lout);
+    LivenessSet n = replaceFormalArgumentsWithActual(CS, Called, CI, calledFunctionLin, Relevant);
     for (auto I = Lout.begin(), E = Lout.end(); I != E; ++I) {
         if ((*I)->isSummaryNode(CS)) {
             // We shouldn't allow the function call to kill this
@@ -940,12 +936,50 @@ void LivenessPointsTo::addLinAnalysableCalledFunction(LivenessSet &N, const Func
     N.insertAll(n);
 }
 
+LivenessSet LivenessPointsTo::findRelevantNodes(const CallInst *CI, PointsToRelation &Ain, LivenessSet &Lout) {
+    // This is roughly the mark phase from mark-and-sweep garbage collection. We
+    // begin with the roots, which are the arguments of the function and global
+    // variables, then determine what is reachable using the points-to relation.
+    LivenessSet reachable = Lout;
+    std::set<PointsToNode *> seen;
+
+    std::function<void(PointsToNode *)> insertReachable = [&](PointsToNode *N) {
+        if (seen.insert(N).second) {
+            reachable.insert(N);
+            for (auto P = Ain.pointee_begin(N), E = Ain.pointee_end(N); P != E; ++P)
+                insertReachable(*P);
+
+            // If a node is reachable, then so are its subnodes.
+            for (auto *Child : N->children)
+                insertReachable(Child);
+        }
+    };
+
+    // If there is a formal argument that is live at the beginning of the
+    // callee, the corresponding actual argument is live before the call
+    // instruction.
+    for (Value *V : CI->arg_operands()) {
+        PointsToNode *Node = factory.getNode(V);
+        if (isLive(Node, Lout))
+            insertReachable(Node);
+    }
+    // Then add the global variables.
+    for (auto N : Lout)
+        if (isa<GlobalPointsToNode>(N) && isLive(N, Lout))
+            insertReachable(N);
+
+    return reachable;
+}
+
+
 bool LivenessPointsTo::computeLin(const CallString &CS, const Instruction *I, PointsToRelation &Ain, LivenessSet &Lin, LivenessSet &Lout) {
     if (const CallInst *CI = dyn_cast<CallInst>(I)) {
         PointsToNode *CINode = factory.getNode(CI);
 
         SmallVector<const Function *, 8> CalledFunctions;
         bool pointsToUnknown = getCalledFunctions(CalledFunctions, CI, Ain);
+
+        LivenessSet relevant = findRelevantNodes(CI, Ain, Lout);
 
         LivenessSet n;
         if (pointsToUnknown)
@@ -955,7 +989,7 @@ bool LivenessPointsTo::computeLin(const CallString &CS, const Instruction *I, Po
                 if (Called->isDeclaration())
                     addLinCalledDeclaration(n, CS, CI, Ain, Lout);
                 else
-                    addLinAnalysableCalledFunction(n, Called, CS, CI, Lout);
+                    addLinAnalysableCalledFunction(n, Called, CS, CI, Lout, relevant);
             }
         }
 
@@ -978,6 +1012,7 @@ bool LivenessPointsTo::computeLin(const CallString &CS, const Instruction *I, Po
         // so don't do anything here. Otherwise, we need to update lin and add
         // the predecessors of the current instruction to the worklist.
         if (n != Lin) {
+            assert(n.isSubset(Lin));
             Lin.clear();
             Lin.insertAll(n);
             return true;
@@ -995,6 +1030,7 @@ bool LivenessPointsTo::computeLin(const CallString &CS, const Instruction *I, Po
         // so don't do anything here. Otherwise, we need to update lin and add
         // the predecessors of the current instruction to the worklist.
         if (n != Lin) {
+            assert(n.isSubset(Lin));
             Lin.clear();
             Lin.insertAll(n);
             return true;
@@ -1130,6 +1166,7 @@ bool LivenessPointsTo::computeAout(const CallString &CS, const Instruction *I, P
         }
 
         if (s != Aout) {
+            assert(s.isSubset(Aout));
             Aout.clear();
             Aout.insertAll(s);
             return true;
@@ -1145,6 +1182,7 @@ bool LivenessPointsTo::computeAout(const CallString &CS, const Instruction *I, P
         s.unionRelationRestriction(Ain, notKilled);
         insertNewPairs(s, I, Ain, Lout);
         if (s != Aout) {
+            assert(s.isSubset(Aout));
             Aout.clear();
             Aout.insertAll(s);
             return true;
@@ -1340,7 +1378,7 @@ PointsToRelation LivenessPointsTo::replaceActualArgumentsWithFormal(const Functi
     return R;
 }
 
-LivenessSet LivenessPointsTo::replaceFormalArgumentsWithActual(const CallString &CS, const Function *Callee, const CallInst *CI, LivenessSet &CalledFunctionLin, LivenessSet &Lout) {
+LivenessSet LivenessPointsTo::replaceFormalArgumentsWithActual(const CallString &CS, const Function *Callee, const CallInst *CI, LivenessSet &CalledFunctionLin, LivenessSet &Relevant) {
     LivenessSet L;
     bool calleeInCallString = CI->getParent()->getParent() == Callee || CS.containsCallIn(Callee);
 
@@ -1355,7 +1393,8 @@ LivenessSet LivenessPointsTo::replaceFormalArgumentsWithActual(const CallString 
             }
         }
 
-        L.insert(N);
+        if (Relevant.find(N) != Relevant.end())
+            L.insert(N);
     }
 
     // Replace formal arguments with actual arguments.
@@ -1381,7 +1420,7 @@ LivenessSet LivenessPointsTo::replaceFormalArgumentsWithActual(const CallString 
     // FIXME: What about varargs?
     for (Value *V : CI->arg_operands()) {
         PointsToNode *ArgNode = factory.getNode(V);
-        if (Lout.find(ArgNode) != Lout.end())
+        if (Relevant.find(ArgNode) != Relevant.end())
             L.insert(ArgNode);
     }
 
@@ -1496,18 +1535,18 @@ void LivenessPointsTo::runOnFunction(const Function *F, const CallString &CS, In
              instruction_lout = instruction_nonresult->second.first;
 
         computeLout(I, *instruction_lout, *Result);
-        // Lin depends on Lout, so this call needs to happen after computeLout
-        // (or the current instruction should be added to the worklist when
-        // computeLout returns true).
-        bool addPredsToWorklist = computeLin(CS, I, *instruction_ain, *instruction_lin, *instruction_lout);
-        // Ain depends on Lin, so this call needs to 7happen after computeLin
-        // (or the current instruction should be added to the worklist when
-        // computeLin returns true).
-        bool addCurrToWorklist = computeAin(I, F, *instruction_ain, *instruction_lin, Result, CS.isEmpty());
         // Aout depends on Lout, so this call needs to happen after computeLout
         // (or the current instruction should be added to the worklist when
         // computeLout returns true).
         bool addSuccsToWorklist = computeAout(CS, I, *instruction_ain, *instruction_aout, *instruction_lout);
+        // Lin depends on Lout, so this call needs to happen after computeLout
+        // (or the current instruction should be added to the worklist when
+        // computeLout returns true).
+        bool addPredsToWorklist = computeLin(CS, I, *instruction_ain, *instruction_lin, *instruction_lout);
+        // Ain depends on Lin, so this call needs to happen after computeLin
+        // (or the current instruction should be added to the worklist when
+        // computeLin returns true).
+        bool addCurrToWorklist = computeAin(I, F, *instruction_ain, *instruction_lin, Result, CS.isEmpty());
 
         // Add succs to worklist
         if (addSuccsToWorklist) {

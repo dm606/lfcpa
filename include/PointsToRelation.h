@@ -180,24 +180,6 @@ public:
             // At this point, *SI == RI->first, and neither iterator has reached
             // the end.
 
-            if (I != E && isa<UnknownPointsToNode>(I->second)) {
-                // If I->first points to unknown, then don't bother inserting any
-                // pairs with the same first element.
-                while (RI != RE && I->first == RI->first) ++RI;
-                ++I;
-                continue;
-            }
-
-            if (isa<UnknownPointsToNode>(RI->second)) {
-                // RI->first is going to point to unknown, so remove all pairs
-                // with the same first element and then insert *RI.
-                while (I != E && I->first == RI->first)
-                    I = s.erase(I);
-                s.emplace_hint(I, *RI);
-                ++RI;
-                continue;
-            }
-
             // Find the position to insert the next value at.
             while (I != E && l(*I, *RI)) ++I;
 
