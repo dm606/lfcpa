@@ -248,9 +248,12 @@ public:
 
     bool isSubset(PointsToRelation &R) {
         for (auto P : R.s) {
+            if (P.first->isAlwaysSummaryNode())
+                continue;
+
             bool found = false;
             for (auto Q : s) {
-                if (Q == P || (Q.first == P.first && isa<UnknownPointsToNode>(Q.second)))
+                if (Q == P)
                     found = true;
             }
             if (!found)

@@ -1142,6 +1142,32 @@ void LivenessPointsTo::addAoutAnalysableCalledFunction(PointsToRelation &S, cons
     S.insertAll(s);
 }
 
+bool isConstant(const Function *Called) {
+    StringRef Name = Called->getName();
+    if (Name == "fprintf"
+     || Name == "fflush"
+     || Name == "fwrite"
+     || Name == "fputc"
+     || Name == "llvm.lifetime.start"
+     || Name == "llvm.lifetime.end"
+     || Name == "strcmp"
+     || Name == "strlen"
+     || Name == "printf"
+     || Name == "exit"
+     || Name == "putchar"
+     || Name == "sprintf"
+     || Name == "strtol"
+     || Name == "puts"
+     || Name == "strncmp"
+     || Name == "_IO_putc"
+     || Name == "fclose"
+     || Name == "malloc"
+     || Name == "calloc")
+            return true;
+    else
+        return false;
+}
+
 bool LivenessPointsTo::computeAout(const CallString &CS, const Instruction *I, PointsToRelation &Ain, PointsToRelation &Aout, LivenessSet &Lout) {
     if (const CallInst *CI = dyn_cast<CallInst>(I)) {
         if (CI->doesNotReturn()) {
@@ -1158,8 +1184,14 @@ bool LivenessPointsTo::computeAout(const CallString &CS, const Instruction *I, P
             addAoutUnknownCalledFunction(s, CS, CI, Ain, Lout);
         else {
             for (const Function *Called : CalledFunctions) {
-                if (Called->isDeclaration())
-                    addAoutCalledDeclaration(s, CS, CI, Ain, Lout);
+                if (Called->isDeclaration()) {
+                    if (isConstant(Called)) {
+                        // This call does not change anything.
+                        s.unionRelationRestriction(Ain, Lout);
+                    }
+                    else
+                        addAoutCalledDeclaration(s, CS, CI, Ain, Lout);
+                }
                 else
                     addAoutAnalysableCalledFunction(s, Called, CS, CI, Ain, Lout);
             }
@@ -1698,10 +1730,11 @@ bool LivenessPointsTo::runOnFunctionAt(const CallString& CS,
 }
 
 void LivenessPointsTo::runOnModule(Module &M) {
-    for (Function &F : M)
+    for (Function &F : M) {
         if (!F.isDeclaration()) {
             LivenessSet L;
             PointsToRelation R;
             runOnFunctionAt(CallString::empty(), &F, R, L, true, true);
         }
+    }
 }

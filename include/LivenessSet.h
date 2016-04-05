@@ -68,6 +68,9 @@ class LivenessSet {
 
         bool isSubset(LivenessSet &S) {
             for (auto N : S) {
+                if (N->isAlwaysSummaryNode())
+                    continue;
+
                 if (s.find(N) == s.end())
                     return false;
             }
