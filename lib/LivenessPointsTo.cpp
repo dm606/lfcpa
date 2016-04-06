@@ -955,15 +955,10 @@ LivenessSet LivenessPointsTo::findRelevantNodes(const CallInst *CI, PointsToRela
         }
     };
 
-    // If there is a formal argument that is live at the beginning of the
-    // callee, the corresponding actual argument is live before the call
-    // instruction.
     for (Value *V : CI->arg_operands()) {
         PointsToNode *Node = factory.getNode(V);
-        if (isLive(Node, Lout))
-            insertReachable(Node);
+        insertReachable(Node);
     }
-    // Then add the global variables.
     for (auto N : Lout)
         if (isa<GlobalPointsToNode>(N) && isLive(N, Lout))
             insertReachable(N);
@@ -980,7 +975,6 @@ bool LivenessPointsTo::computeLin(const CallString &CS, const Instruction *I, Po
         bool pointsToUnknown = getCalledFunctions(CalledFunctions, CI, Ain);
 
         LivenessSet relevant = findRelevantNodes(CI, Ain, Lout);
-
         LivenessSet n;
         if (pointsToUnknown)
             addLinUnknownCalledFunction(n, CS, CI, Ain, Lout);
@@ -1425,8 +1419,7 @@ LivenessSet LivenessPointsTo::replaceFormalArgumentsWithActual(const CallString 
             }
         }
 
-        if (Relevant.find(N) != Relevant.end())
-            L.insert(N);
+        L.insert(N);
     }
 
     // Replace formal arguments with actual arguments.
@@ -1452,11 +1445,15 @@ LivenessSet LivenessPointsTo::replaceFormalArgumentsWithActual(const CallString 
     // FIXME: What about varargs?
     for (Value *V : CI->arg_operands()) {
         PointsToNode *ArgNode = factory.getNode(V);
-        if (Relevant.find(ArgNode) != Relevant.end())
-            L.insert(ArgNode);
+        L.insert(ArgNode);
     }
 
-    return L;
+    LivenessSet L2;
+    for (PointsToNode *N : L)
+        if (Relevant.find(N) != Relevant.end())
+            L2.insert(N);
+
+    return L2;
 }
 
 PointsToRelation LivenessPointsTo::replaceReturnValuesWithCallInst(const CallInst *CI, PointsToRelation &Aout, std::set<PointsToNode *> &ReturnValues, LivenessSet &Lout) {
