@@ -535,11 +535,8 @@ void insertNewPairsLoadInst(PointsToRelation &Aout, PointsToNode *Load, PointsTo
             return;
 
         std::set<PointsToNode *> t;
-        for (auto P = Ain.pointee_begin(Ptr), E = Ain.pointee_end(Ptr); P != E; ++P) {
-            if (isa<UnknownPointsToNode>(*P))
-                Aout.insert({Load, Unknown});
+        for (auto P = Ain.pointee_begin(Ptr), E = Ain.pointee_end(Ptr); P != E; ++P)
             t.insert(*P);
-        }
         for (auto P = Ain.restriction_begin(t), E = Ain.restriction_end(t); P != E; ++P)
             Aout.insert(makePointsToPair(Load, P->second));
     }
@@ -577,13 +574,8 @@ void insertNewPairsLoadInst(PointsToRelation &Aout, PointsToNode *Load, PointsTo
 }
 
 void insertNewPairsStoreInst(PointsToRelation &Aout, PointsToNode *Ptr, PointsToNode *Value, PointsToNode *Unknown, PointsToRelation &Ain, LivenessSet &Lout) {
-    bool insertUnknowns = false;
     if (!Ptr->isAggregate() && !Value->isAggregate()) {
         for (auto P = Ain.pointee_begin(Ptr), PE = Ain.pointee_end(Ptr); P != PE; ++P) {
-            if (isa<UnknownPointsToNode>(Ptr)) {
-                insertUnknowns = true;
-                continue;
-            }
             if (Lout.find(*P) != Lout.end())
                 for (auto Q = Ain.pointee_begin(Value), QE = Ain.pointee_end(Value); Q != QE; ++Q)
                     Aout.insert(makePointsToPair(*P, *Q));
@@ -595,10 +587,6 @@ void insertNewPairsStoreInst(PointsToRelation &Aout, PointsToNode *Ptr, PointsTo
         unionPointeesWithDescendants(ptrPointees, Ain, l, Ptr);
         unionPointeesWithDescendants(valuePointees, Ain, l, Value);
         for (auto P : ptrPointees) {
-            if (isa<UnknownPointsToNode>(P.second)) {
-                insertUnknowns = true;
-                continue;
-            }
             if (Lout.find(P.second) != Lout.end()) {
                 for (auto Q : valuePointees) {
                     switch (matchIndexLists(P.first, Q.first)) {
@@ -621,14 +609,6 @@ void insertNewPairsStoreInst(PointsToRelation &Aout, PointsToNode *Ptr, PointsTo
                 }
             }
         }
-    }
-
-    if (insertUnknowns) {
-        // If Ptr points to ?, then we don't know what anything points to after
-        // this instruction. Normally Lout would be empty (everything is
-        // killed), but summary nodes cannot be killed.
-        for (auto I = Lout.begin(), E = Lout.end(); I != E; ++I)
-            Aout.insert({*I, Unknown});
     }
 }
 
@@ -771,6 +751,14 @@ void LivenessPointsTo::computeLout(const Instruction *I, LivenessSet& Lout, Intr
     }
 }
 
+bool LivenessPointsTo::isArgument(const Function *F, const PointsToNode *N) {
+    for (auto I = F->arg_begin(), E = F->arg_end(); I != E; ++I)
+        if (factory.getNode(&*I) == N)
+            return true;
+
+    return false;
+}
+
 bool LivenessPointsTo::computeAin(const Instruction *I, const Function *F, PointsToRelation &Ain, LivenessSet &Lin, IntraproceduralPointsTo *Result, bool InsertAtFirstInstruction) {
     // Compute ain for the current instruction.
     PointsToRelation s;
@@ -780,14 +768,18 @@ bool LivenessPointsTo::computeAin(const Instruction *I, const Function *F, Point
             // If this is the first instruction of the function, then apart from
             // the data in entry, we don't know what anything points to. ain
             // already contains the data in entry, so add the remaining pairs.
-            // If this function is being analysed as a callee, then don't insert
-            // any pairs of the form x-->? because we might find out what x
-            // points to later.
             for (PointsToNode *N : Lin) {
                 if (!hasPointee(s, N)) {
-                    std::pair<PointsToNode *, PointsToNode *> p =
-                        std::make_pair(N, factory.getUnknown());
-                    s.insert(p);
+                    if (isa<GlobalPointsToNode>(N) || isArgument(F, N)) {
+                        // We don't know what globals are initialized to, but they
+                        // shouldn't be treated as undefined.
+                        s.insert({N, factory.getInit()});
+                    }
+                    else {
+                        std::pair<PointsToNode *, PointsToNode *> p =
+                            std::make_pair(N, factory.getUnknown());
+                        s.insert(p);
+                    }
                 }
             }
         }
@@ -851,64 +843,18 @@ bool LivenessPointsTo::getCalledFunctions(SmallVector<const Function *, 8> &Resu
     return false;
 }
 
-void LivenessPointsTo::addLinUnknownCalledFunction(LivenessSet &N, const CallString &CS, const CallInst *CI, PointsToRelation &Ain, LivenessSet &Lout) {
-    // We reach this point if we will never know which function is called. Just
-    // assume the worst case -- the function may invalidate or use anything that
-    // it has access to.
-
-    // We assume that the function will use the value of anything that is
-    // reachable from it, and will kill anything that is reachable
-    // from it.
-    YesNoMaybe EverythingReachable = No;
-    LivenessSet reachable, killable;
-    insertReachableUnknownFunction(CS, CI, reachable, killable, Ain, EverythingReachable);
-
-    LivenessSet n = Lout;
-
-    if (EverythingReachable == Yes) {
-        // If everything is reachable, then everything might be
-        // ref'd, so insert as much as possible into n.
-        Ain.insertEverythingInto(n);
-        n.insertAll(reachable);
-    }
-    else {
-        // If only the nodes in reachable are reachable, then only
-        // these should be made live. If we don't yet know whether
-        // anything will be reachable or not, we must be
-        // conservative for monotonicity.
-        n.insertAll(reachable);
-    }
-
-    // TODO: This isn't very efficient...
-    N.insertAll(n);
-}
-
-void LivenessPointsTo::addLinCalledDeclaration(LivenessSet &N, const CallString &CS, const CallInst *CI, PointsToRelation &Ain, LivenessSet &Lout) {
+void LivenessPointsTo::addLinCalledDeclaration(LivenessSet &N, const CallString &CS, const CallInst *CI, LivenessSet &Lout) {
     // We reach this point if we have a declaration. Just assume the worst case
     // -- the function may invalidate or use anything that it has access to.
-
-    // We assume that the function will use the value of anything that is
-    // reachable from it, and will kill anything that is reachable
-    // from it.
-    YesNoMaybe EverythingReachable = No;
-    LivenessSet reachable, killable;
-    insertReachableDeclaration(CS, CI, reachable, killable, Ain, EverythingReachable);
-
     LivenessSet n = Lout;
+    if (CI->paramHasAttr(0, Attribute::NoAlias)) {
+        PointsToNode *NoAlias = factory.getNoAliasNode(CI);
+        if (!NoAlias->isSummaryNode(CS))
+            killDescendants(n, NoAlias);
+    }
 
-    if (EverythingReachable == Yes) {
-        // If everything is reachable, then everything might be
-        // ref'd, so insert as much as possible into n.
-        Ain.insertEverythingInto(n);
-        n.insertAll(reachable);
-    }
-    else {
-        // If only the nodes in reachable are reachable, then only
-        // these should be made live. If we don't yet know whether
-        // anything will be reachable or not, we must be
-        // conservative for monotonicity.
-        n.insertAll(reachable);
-    }
+    for (Value *V : CI->arg_operands())
+        n.insert(factory.getNode(V));
 
     // TODO: This isn't very efficient...
     N.insertAll(n);
@@ -976,12 +922,15 @@ bool LivenessPointsTo::computeLin(const CallString &CS, const Instruction *I, Po
 
         LivenessSet relevant = findRelevantNodes(CI, Ain, Lout);
         LivenessSet n;
-        if (pointsToUnknown)
-            addLinUnknownCalledFunction(n, CS, CI, Ain, Lout);
+        if (pointsToUnknown) {
+            // The function is undefined -- just insert what's already there for
+            // monotonicity
+            n = Lout;
+        }
         else {
             for (const Function *Called : CalledFunctions) {
                 if (Called->isDeclaration())
-                    addLinCalledDeclaration(n, CS, CI, Ain, Lout);
+                    addLinCalledDeclaration(n, CS, CI, Lout);
                 else
                     addLinAnalysableCalledFunction(n, Called, CS, CI, Lout, relevant);
             }
@@ -1034,82 +983,40 @@ bool LivenessPointsTo::computeLin(const CallString &CS, const Instruction *I, Po
     }
 }
 
-void LivenessPointsTo::addAoutUnknownCalledFunction(PointsToRelation &S, const CallString &CS, const CallInst *CI, PointsToRelation &Ain, LivenessSet &Lout) {
+void LivenessPointsTo::addAoutCalledDeclaration(PointsToRelation &S, const CallInst *CI, PointsToRelation &Ain, LivenessSet &Lout) {
     PointsToNode *CINode = factory.getNode(CI);
 
     // Anything that can be modified by the function (including the return value
-    // unless it has the noalias attribute) must point to unknown; anything else
-    // points to the same thing that it does in ain.  If a node that has no
-    // pointees is reachable, we can't insert pairs of the form x-->? unless we
-    // know that x is definitely reachable, because we might discover what the
-    // node points to later.
+    // unless it has the noalias attribute) anything that is reachable, and
+    // something else; anything else points to the same thing that it does in
+    // Ain.
     LivenessSet reachable = LivenessSet();
     LivenessSet killable = LivenessSet();
-    YesNoMaybe EverythingReachable = No;
-    insertReachableDeclaration(CS, CI, reachable, killable, Ain, EverythingReachable);
-    if (!CINode->singlePointee())
-        reachable.insert(CINode);
+    insertReachableDeclaration(CI, reachable, killable, Ain);
+    LivenessSet addressable = killable;
     PointsToRelation s;
-    if (EverythingReachable == Yes) {
-        for (PointsToNode *N : Lout)
-            s.insert(std::make_pair(N, factory.getUnknown()));
-    }
-    else if (EverythingReachable == No) {
-        if (Lout.find(CINode) != Lout.end())
-            s.insert(std::make_pair(CINode, factory.getUnknown()));
-        for (PointsToNode *N : killable)
-            if (Lout.find(N) != Lout.end())
-                s.insert(std::make_pair(N, factory.getUnknown()));
-        for (auto P = Ain.restriction_begin(Lout), E = Ain.restriction_end(Lout); P != E; ++P)
-            if (killable.find(P->first) == killable.end())
-                s.insert(*P);
-    }
-    // If the function's return value has the noalias attribute
-    // then we don't know what the noalias points to.
-    if (CI->paramHasAttr(0, Attribute::NoAlias)) {
+    if (!CI->paramHasAttr(0, Attribute::NoAlias))
+        killable.insert(CINode);
+    else {
         PointsToNode *NoAliasNode = factory.getNoAliasNode(CI);
-        makeDescendantsPointTo(s, NoAliasNode, factory.getUnknown(), Lout);
+        killable.insert(NoAliasNode);
     }
 
-    S.insertAll(s);
-}
+    for (PointsToNode *N : killable) {
+        if (Lout.find(N) != Lout.end()) {
+            // N can point to anything that is killable from the callee, plus
+            // a noalias summary node.
+            for (PointsToNode *M : addressable) {
+                if (N != M)
+                    s.insert({N, M});
+            }
 
-void LivenessPointsTo::addAoutCalledDeclaration(PointsToRelation &S, const CallString &CS, const CallInst *CI, PointsToRelation &Ain, LivenessSet &Lout) {
-    PointsToNode *CINode = factory.getNode(CI);
-
-    // Anything that can be modified by the function (including the return value
-    // unless it has the noalias attribute) must point to unknown; anything else
-    // points to the same thing that it does in ain.  If a node that has no
-    // pointees is reachable, we can't insert pairs of the form x-->? unless we
-    // know that x is definitely reachable, because we might discover what the
-    // node points to later.
-    LivenessSet reachable = LivenessSet();
-    LivenessSet killable = LivenessSet();
-    YesNoMaybe EverythingReachable = No;
-    insertReachableDeclaration(CS, CI, reachable, killable, Ain, EverythingReachable);
-    if (!CINode->singlePointee())
-        reachable.insert(CINode);
-    PointsToRelation s;
-    if (EverythingReachable == Yes) {
-        for (PointsToNode *N : Lout)
-            s.insert(std::make_pair(N, factory.getUnknown()));
+            s.insert({N, factory.getUnknown()});
+        }
     }
-    else if (EverythingReachable == No) {
-        if (Lout.find(CINode) != Lout.end())
-            s.insert(std::make_pair(CINode, factory.getUnknown()));
-        for (PointsToNode *N : killable)
-            if (Lout.find(N) != Lout.end())
-                s.insert(std::make_pair(N, factory.getUnknown()));
-        for (auto P = Ain.restriction_begin(Lout), E = Ain.restriction_end(Lout); P != E; ++P)
-            if (killable.find(P->first) == killable.end())
-                s.insert(*P);
-    }
-    // If the function's return value has the noalias attribute
-    // then we don't know what the noalias points to.
-    if (CI->paramHasAttr(0, Attribute::NoAlias)) {
-        PointsToNode *NoAliasNode = factory.getNoAliasNode(CI);
-        makeDescendantsPointTo(s, NoAliasNode, factory.getUnknown(), Lout);
-    }
+    for (auto P = Ain.restriction_begin(Lout), E = Ain.restriction_end(Lout); P != E; ++P)
+        if (killable.find(P->first) == killable.end())
+            s.insert(*P);
 
     S.insertAll(s);
 }
@@ -1156,7 +1063,9 @@ bool isConstant(const Function *Called) {
      || Name == "_IO_putc"
      || Name == "fclose"
      || Name == "malloc"
-     || Name == "calloc")
+     || Name == "calloc"
+     || Name == "floor"
+     || Name == "ceil")
             return true;
     else
         return false;
@@ -1174,8 +1083,11 @@ bool LivenessPointsTo::computeAout(const CallString &CS, const Instruction *I, P
         bool pointsToUnknown = getCalledFunctions(CalledFunctions, CI, Ain);
 
         PointsToRelation s;
-        if (pointsToUnknown)
-            addAoutUnknownCalledFunction(s, CS, CI, Ain, Lout);
+        if (pointsToUnknown) {
+            // The function is undefined -- just copy what is already
+            // there for monotonicity.
+            s = Aout;
+        }
         else {
             for (const Function *Called : CalledFunctions) {
                 if (Called->isDeclaration()) {
@@ -1184,7 +1096,7 @@ bool LivenessPointsTo::computeAout(const CallString &CS, const Instruction *I, P
                         s.unionRelationRestriction(Ain, Lout);
                     }
                     else
-                        addAoutCalledDeclaration(s, CS, CI, Ain, Lout);
+                        addAoutCalledDeclaration(s, CI, Ain, Lout);
                 }
                 else
                     addAoutAnalysableCalledFunction(s, Called, CS, CI, Ain, Lout);
@@ -1218,7 +1130,7 @@ bool LivenessPointsTo::computeAout(const CallString &CS, const Instruction *I, P
     }
 }
 
-void LivenessPointsTo::insertReachableDeclaration(const CallString &CS, const CallInst *CI, LivenessSet &Reachable, LivenessSet &Killable, PointsToRelation &Ain, YesNoMaybe &EverythingReachable) {
+void LivenessPointsTo::insertReachableDeclaration(const CallInst *CI, LivenessSet &Reachable, LivenessSet &Killable, PointsToRelation &Ain) {
     std::set<PointsToNode *> seen;
     // FIXME: Can globals be accessed by the function?
     // This is roughly the mark phase from mark-and-sweep garbage collection. We
@@ -1227,13 +1139,9 @@ void LivenessPointsTo::insertReachableDeclaration(const CallString &CS, const Ca
     std::function<void(PointsToNode *)> insertReachable = [&](PointsToNode *N) {
         if (seen.insert(N).second) {
             Reachable.insert(N);
-            bool noPointees = true;
             for (auto P = Ain.pointee_begin(N), E = Ain.pointee_end(N); P != E; ++P) {
-                if (isa<UnknownPointsToNode>(*P)) {
-                    EverythingReachable = Yes;
-                    return;
-                }
-                noPointees = false;
+                if (isa<UnknownPointsToNode>(*P))
+                    continue;
                 // A node can only be killed if it is pointed to by something
                 // that is reachable, or is a child of something that is
                 // killable.
@@ -1242,47 +1150,6 @@ void LivenessPointsTo::insertReachableDeclaration(const CallString &CS, const Ca
                     Killable.insert(Child);
                 insertReachable(*P);
             }
-            if (noPointees && (N->hasPointerType() || N->isSummaryNode(CS)) && !N->singlePointee() && EverythingReachable == No)
-                EverythingReachable = Maybe;
-
-            // If a node is reachable, then so are its subnodes.
-            for (auto *Child : N->children)
-                insertReachable(Child);
-        }
-    };
-
-    // Arguments are roots.
-    for (Value *V : CI->arg_operands())
-        insertReachable(factory.getNode(V));
-}
-
-void LivenessPointsTo::insertReachableUnknownFunction(const CallString &CS, const CallInst *CI, LivenessSet &Reachable, LivenessSet &Killable, PointsToRelation &Ain, YesNoMaybe &EverythingReachable) {
-    // TODO: Do we need to insert globals?
-
-    std::set<PointsToNode *> seen;
-    // This is roughly the mark phase from mark-and-sweep garbage collection. We
-    // begin with the roots, which are the arguments of the function,  then
-    // determine what is reachable using the points-to relation.
-    std::function<void(PointsToNode *)> insertReachable = [&](PointsToNode *N) {
-        if (seen.insert(N).second) {
-            Reachable.insert(N);
-            bool noPointees = true;
-            for (auto P = Ain.pointee_begin(N), E = Ain.pointee_end(N); P != E; ++P) {
-                if (isa<UnknownPointsToNode>(*P)) {
-                    EverythingReachable = Yes;
-                    return;
-                }
-                noPointees = false;
-                // A node can only be killed if it is pointed to by something
-                // that is reachable, or is a child of something that is
-                // killable.
-                Killable.insert(*P);
-                for (auto *Child : (*P)->children)
-                    Killable.insert(Child);
-                insertReachable(*P);
-            }
-            if (noPointees && (N->hasPointerType() || N->isSummaryNode(CS)) && !N->singlePointee() && EverythingReachable == No)
-                EverythingReachable = Maybe;
 
             // If a node is reachable, then so are its subnodes.
             for (auto *Child : N->children)

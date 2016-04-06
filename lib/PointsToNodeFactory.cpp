@@ -9,6 +9,10 @@ PointsToNode *PointsToNodeFactory::getUnknown() {
     return &unknown;
 }
 
+PointsToNode *PointsToNodeFactory::getInit() {
+    return &init;
+}
+
 bool PointsToNodeFactory::matchGEPNode(const GEPOperator *I, const PointsToNode *N) const {
     if (const GEPPointsToNode *GEPNode = dyn_cast<GEPPointsToNode>(N)) {
         auto GEPNodeI = GEPNode->indices.begin(), GEPNodeE = GEPNode->indices.end();

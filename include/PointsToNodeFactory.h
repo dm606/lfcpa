@@ -13,10 +13,12 @@ class PointsToNodeFactory {
         DenseMap<const Value *, PointsToNode *> noAliasMap;
         DenseMap<const GlobalObject *, PointsToNode *> globalMap;
         UnknownPointsToNode unknown;
+        InitPointsToNode init;
         bool matchGEPNode(const GEPOperator *, const PointsToNode *) const;
         PointsToNode *getGEPNode(const GEPOperator *, const Type *Type, PointsToNode *, PointsToNode *) const;
     public:
         PointsToNode *getUnknown();
+        PointsToNode *getInit();
         PointsToNode *getNode(const Value *);
         PointsToNode *getNoAliasNode(const AllocaInst *);
         PointsToNode *getNoAliasNode(const CallInst *);

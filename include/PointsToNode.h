@@ -24,6 +24,7 @@ class PointsToNode {
 public:
     enum PointsToNodeKind {
         PTNK_Unknown,
+        PTNK_Init,
         PTNK_Value,
         PTNK_Global,
         PTNK_NoAlias,
@@ -48,7 +49,6 @@ public:
     virtual bool hasPointerType() const { return false; }
     virtual bool multipleStackFrames() const { return false; }
     virtual bool singlePointee() const { return false; }
-    virtual bool basedOnNoAlias() const { return false; }
     virtual PointsToNode *getSinglePointee() const {
         llvm_unreachable("This node doesn't always have a single pointee.");
     }
@@ -194,6 +194,23 @@ class GlobalPointsToNode : public PointsToNode {
         }
 };
 
+class InitPointsToNode : public PointsToNode {
+    public:
+        InitPointsToNode() : PointsToNode(PTNK_Init) {
+            name = "init";
+            summaryNode = true;
+            fieldSensitive = false;
+        }
+
+        bool hasPointerType() const override { return true; }
+        bool multipleStackFrames() const override { return true; }
+        bool singlePointee() const override { return true; }
+        PointsToNode *getSinglePointee() const override { return const_cast<InitPointsToNode *>(this); }
+        static bool classof(const PointsToNode *N) {
+            return N->getKind() == PTNK_Init;
+        }
+};
+
 class NoAliasPointsToNode : public PointsToNode {
     private:
         std::string stdName;
@@ -218,7 +235,6 @@ class NoAliasPointsToNode : public PointsToNode {
 
         bool hasPointerType() const override { return isPointer; }
         bool multipleStackFrames() const override { return true; }
-        bool basedOnNoAlias() const override { return true; }
         bool isSummaryNode(const CallString &CS) const override {
             if (summaryNode)
                 return true;
@@ -326,7 +342,6 @@ class GEPPointsToNode : public PointsToNode {
         bool hasPointerType() const override { return pointerType; }
         bool multipleStackFrames() const override { return true; }
         bool singlePointee() const override { return Pointee != nullptr; }
-        bool basedOnNoAlias() const override { return Parent->basedOnNoAlias(); }
         PointsToNode *getSinglePointee() const override {
             assert(Pointee != nullptr);
             return Pointee;
