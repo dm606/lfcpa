@@ -758,7 +758,6 @@ bool LivenessPointsTo::isArgument(const Function *F, const PointsToNode *N) {
 
     return false;
 }
-
 bool LivenessPointsTo::computeAin(const Instruction *I, const Function *F, PointsToRelation &Ain, LivenessSet &Lin, IntraproceduralPointsTo *Result, bool InsertAtFirstInstruction) {
     // Compute ain for the current instruction.
     PointsToRelation s;
@@ -887,7 +886,7 @@ LivenessSet LivenessPointsTo::findRelevantNodes(const CallInst *CI, PointsToRela
 
     for (Value *V : CI->arg_operands()) {
         PointsToNode *Node = factory.getNode(V);
-        makeDescendantsLive(Lout, Node);
+        makeDescendantsLive(reachable, Node);
     }
 
     return reachable;
@@ -906,7 +905,7 @@ bool LivenessPointsTo::computeLin(const CallString &CS, const Instruction *I, Po
         if (pointsToUnknown) {
             // The function is undefined -- just insert what's already there for
             // monotonicity
-            n = Lout;
+            n = Lin;
         }
         else {
             for (const Function *Called : CalledFunctions) {
@@ -1285,15 +1284,6 @@ LivenessSet LivenessPointsTo::replaceFormalArgumentsWithActual(const CallString 
         }
 
         ++Arg;
-    }
-
-    // The values of the arguments are not live at the end of the function
-    // because they cannot be modified by the function; they are inserted into
-    // Lin directly here.
-    // FIXME: What about varargs?
-    for (Value *V : CI->arg_operands()) {
-        PointsToNode *ArgNode = factory.getNode(V);
-        L.insert(ArgNode);
     }
 
     LivenessSet L2;
