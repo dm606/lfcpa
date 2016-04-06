@@ -65,9 +65,6 @@ struct LivenessBasedAA : public ModulePass, public AliasAnalysis {
         std::pair<const PointsToNode *, SmallVector<uint64_t, 4>> address;
         bool possibleMustAlias = allowMustAlias, foundAddress = false;
         for (PointsToNode *N : ASet) {
-            if (isa<UnknownPointsToNode>(N))
-                return MayAlias;
-
             if (possibleMustAlias) {
                 auto currentAddress = N->getAddress();
                 if (foundAddress && address != currentAddress)
@@ -79,9 +76,6 @@ struct LivenessBasedAA : public ModulePass, public AliasAnalysis {
             }
         }
         for (PointsToNode *N : BSet) {
-            if (isa<UnknownPointsToNode>(N))
-                return MayAlias;
-
             if (possibleMustAlias) {
                 auto currentAddress = N->getAddress();
                 // ASet contains at least one element.
