@@ -883,31 +883,12 @@ void LivenessPointsTo::addLinAnalysableCalledFunction(LivenessSet &N, const Func
 }
 
 LivenessSet LivenessPointsTo::findRelevantNodes(const CallInst *CI, PointsToRelation &Ain, LivenessSet &Lout) {
-    // This is roughly the mark phase from mark-and-sweep garbage collection. We
-    // begin with the roots, which are the arguments of the function and global
-    // variables, then determine what is reachable using the points-to relation.
     LivenessSet reachable = Lout;
-    std::set<PointsToNode *> seen;
-
-    std::function<void(PointsToNode *)> insertReachable = [&](PointsToNode *N) {
-        if (seen.insert(N).second) {
-            reachable.insert(N);
-            for (auto P = Ain.pointee_begin(N), E = Ain.pointee_end(N); P != E; ++P)
-                insertReachable(*P);
-
-            // If a node is reachable, then so are its subnodes.
-            for (auto *Child : N->children)
-                insertReachable(Child);
-        }
-    };
 
     for (Value *V : CI->arg_operands()) {
         PointsToNode *Node = factory.getNode(V);
-        insertReachable(Node);
+        makeDescendantsLive(Lout, Node);
     }
-    for (auto N : Lout)
-        if (isa<GlobalPointsToNode>(N) && isLive(N, Lout))
-            insertReachable(N);
 
     return reachable;
 }
