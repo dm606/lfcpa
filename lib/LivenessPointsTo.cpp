@@ -881,7 +881,7 @@ void LivenessPointsTo::addLinAnalysableCalledFunction(LivenessSet &N, const Func
     N.insertAll(n);
 }
 
-LivenessSet LivenessPointsTo::findRelevantNodes(const CallInst *CI, PointsToRelation &Ain, LivenessSet &Lout) {
+LivenessSet LivenessPointsTo::findRelevantNodes(const CallInst *CI, LivenessSet &Lout) {
     LivenessSet reachable = Lout;
 
     for (Value *V : CI->arg_operands()) {
@@ -900,7 +900,7 @@ bool LivenessPointsTo::computeLin(const CallString &CS, const Instruction *I, Po
         SmallVector<const Function *, 8> CalledFunctions;
         bool pointsToUnknown = getCalledFunctions(CalledFunctions, CI, Ain);
 
-        LivenessSet relevant = findRelevantNodes(CI, Ain, Lout);
+        LivenessSet relevant = findRelevantNodes(CI, Lout);
         LivenessSet n;
         if (pointsToUnknown) {
             // The function is undefined -- just insert what's already there for
