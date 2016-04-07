@@ -1447,6 +1447,9 @@ void LivenessPointsTo::runOnFunction(const Function *F, const CallString &CS, In
 
         if (worklist.empty() && createdSummaryNode) {
             createdSummaryNode = false;
+            // Need to rerun on calls even if the data passed to them has not
+            // changed.
+            callData.clear();
             // We need to rerun on stores because they might need to treat a
             // summary node differently.
             for (const_inst_iterator I = inst_begin(F), E = inst_end(F); I != E; I++)
@@ -1544,7 +1547,29 @@ bool LivenessPointsTo::runOnFunctionAt(const CallString& CS,
             LivenessSet L;
             bool RVL;
             std::tie(I, F, PT, L, RVL) = C;
-            rerun |= runOnFunctionAt(CS.addCallSite(I), F, PT, L, RVL, false);
+
+            CallString newCS = CS.addCallSite(I);
+
+            auto Iter = std::find_if(callData.begin(), callData.end(), [&](std::tuple<CallString, const Function *, PointsToRelation, LivenessSet, bool> D) {
+                CallString CS = std::get<0>(D);
+                const Function *IF = std::get<1>(D);
+                return CS.matches(newCS) && IF == F;
+            });
+
+            if (Iter != callData.end()) {
+                auto LastData = *Iter;
+                PointsToRelation LastPT = std::get<2>(LastData);
+                LivenessSet LastL = std::get<3>(LastData);
+                bool LastRVL = std::get<4>(LastData);
+                if (LastPT == PT && LastL == L && LastRVL == RVL)
+                    continue;
+                else
+                    *Iter = std::make_tuple(newCS, F, PT, L, RVL);
+            }
+            else
+                callData.push_back(std::make_tuple(newCS, F, PT, L, RVL));
+
+            rerun |= runOnFunctionAt(newCS, F, PT, L, RVL, false);
         }
         if (rerun)
             return runOnFunctionAt(CS, F, EntryPointsTo, ExitLiveness, MakeReturnValuesLive, true);
@@ -1567,6 +1592,7 @@ bool LivenessPointsTo::runOnFunctionAt(const CallString& CS,
 void LivenessPointsTo::runOnModule(Module &M) {
     for (Function &F : M) {
         if (!F.isDeclaration()) {
+            callData.clear();
             LivenessSet L;
             PointsToRelation R;
             runOnFunctionAt(CallString::empty(), &F, R, L, true, true);
