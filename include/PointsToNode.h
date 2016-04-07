@@ -14,7 +14,7 @@
 
 #include "CallString.h"
 
-#define MAX_DESCENDANT_LEVEL 50000
+#define MAX_DESCENDANT_LEVEL 8
 
 using namespace llvm;
 
@@ -253,8 +253,9 @@ class NoAliasPointsToNode : public PointsToNode {
 };
 
 class GEPPointsToNode : public PointsToNode {
-    private:
+    public:
         const PointsToNode *Parent;
+    private:
         int level;
         bool pointerType;
         std::string stdName;
@@ -283,7 +284,7 @@ class GEPPointsToNode : public PointsToNode {
             if (GEPPointsToNode *P = dyn_cast<GEPPointsToNode>(Parent))
                 level = P->level + indices.size();
             else
-                level = 0;
+                level = indices.size();
 
             // Nested data structures could potentially result in the creation
             // of nodes at an arbitrarily large depth (in terms of the tree of
@@ -321,7 +322,7 @@ class GEPPointsToNode : public PointsToNode {
             if (GEPPointsToNode *P = dyn_cast<GEPPointsToNode>(Parent))
                 level = P->level + indices.size();
             else
-                level = 0;
+                level = indices.size();
 
             // Nested data structures could potentially result in the creation
             // of nodes at an arbitrarily large depth (in terms of the tree of
