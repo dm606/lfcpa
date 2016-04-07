@@ -136,10 +136,9 @@ class ValuePointsToNode : public PointsToNode {
     private:
         std::string stdName;
         bool isPointer, userOrArg;
-        const Value *V;
         PointsToNode *Pointee;
     public:
-        ValuePointsToNode(const Value *V, PointsToNode *Pointee) : PointsToNode(PTNK_Value), V(V), Pointee(Pointee) {
+        ValuePointsToNode(const Value *V, PointsToNode *Pointee) : PointsToNode(PTNK_Value), Pointee(Pointee) {
             assert(V != nullptr);
             name = V->getName();
             if (name == "") {
