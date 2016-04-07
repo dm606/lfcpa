@@ -27,7 +27,7 @@ class PointsToData {
         IntraproceduralPointsTo *getPointsTo(const CallString &, const Function *, PointsToRelation &, LivenessSet &, bool &);
         bool attemptMakeCyclicCallString(const Function *, const CallString &, IntraproceduralPointsTo *);
         bool hasDataForFunction(const Function *) const;
-        IntraproceduralPointsTo *getAtLongestPrefix(const Function *, const CallString &) const;
+        IntraproceduralPointsTo *get(const Function *, const CallString &) const;
     private:
         DenseMap<const Function *, ProcedurePointsTo *> data;
 };

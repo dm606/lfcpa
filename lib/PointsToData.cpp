@@ -140,43 +140,20 @@ bool PointsToData::hasDataForFunction(const Function *F) const {
     return !I->second->empty();
 }
 
-IntraproceduralPointsTo *PointsToData::getAtLongestPrefix(const Function *F, const CallString &CS) const {
+IntraproceduralPointsTo *PointsToData::get(const Function *F, const CallString &CS) const {
     assert(!CS.isCyclic() && "We can only check against non-cyclic call strings.");
 
     auto I = data.find(F);
-    if (I == data.end()) {
-        // There is no prefix in the data.
+    if (I == data.end())
         return nullptr;
-    }
 
     ProcedurePointsTo *V = I->second;
-    IntraproceduralPointsTo *Result = nullptr;
-    int prefixLength = 0;
     for (auto P : *V) {
         auto PCS = std::get<0>(P);
         auto PData = std::get<1>(P);
-        // If the call string is empty, then the function was not analysed as a
-        // callee, so the data should not be used here.
-        if (PCS == CallString::empty())
-            continue;
-
-        if (PCS.isCyclic()) {
-            // We only consider exact matches here.
-            if (PCS.matches(CS))
-                return PData;
-        }
-        else {
-            if (PCS.matches(CS))
-                return PData;
-            else {
-                int l = PCS.size();
-                if (l >= prefixLength && CS.isNonCyclicPrefix(PCS)) {
-                    prefixLength = l;
-                    Result = PData;
-                }
-            }
-        }
+        if (PCS.matches(CS))
+            return PData;
     }
 
-    return Result;
+    return nullptr;
 }

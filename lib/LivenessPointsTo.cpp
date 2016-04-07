@@ -1152,7 +1152,7 @@ std::pair<LivenessSet, PointsToRelation> LivenessPointsTo::getCalledFunctionResu
     if (!data.hasDataForFunction(F))
         return Result;
 
-    IntraproceduralPointsTo *PT = data.getAtLongestPrefix(F, CS);
+    IntraproceduralPointsTo *PT = data.get(F, CS);
     if (PT == nullptr)
         return Result;
     auto FirstInst = inst_begin(F);
