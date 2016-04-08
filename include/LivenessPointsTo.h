@@ -29,7 +29,7 @@ private:
     void addAoutCalledDeclaration(PointsToRelation &, const CallInst *, PointsToRelation &);
     void addAoutAnalysableCalledFunction(PointsToRelation &, const Function *, const CallString &, const CallInst *, PointsToRelation &);
     bool computeAout(const CallString &, const Instruction *, PointsToRelation &, PointsToRelation &);
-    void insertReachableDeclaration(const CallInst *, LivenessSet &, LivenessSet &, PointsToRelation &);
+    std::set<PointsToNode *> getKillableDeclaration(const CallInst *, PointsToRelation &);
     PointsToRelation getCalledFunctionResult(const CallString &, const Function *);
     std::set<PointsToNode *> getReturnValues(const Function *);
     PointsToRelation replaceActualArgumentsWithFormal(const Function *, const CallInst *, PointsToRelation *);
