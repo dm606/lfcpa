@@ -13,10 +13,7 @@ bool arePointsToMapsEqual(const Function *F, IntraproceduralPointsTo *a, Intrapr
     for (const_inst_iterator I = inst_begin(F), E = inst_end(F); I != E; ++I) {
         auto p1 = a->find(&*I), p2 = b.find(&*I);
         assert(p1 != a->end() && p2 != b.end() && "Invalid points-to relations");
-        LivenessSet *l1 = p1->second.first, *l2 = p2->second.first;
-        if (*l1 != *l2)
-            return false;
-        PointsToRelation *r1 = p1->second.second, *r2 = p2->second.second;
+        PointsToRelation *r1 = p1->second, *r2 = p2->second;
         if (*r1 != *r2)
             return false;
     }
@@ -26,14 +23,13 @@ bool arePointsToMapsEqual(const Function *F, IntraproceduralPointsTo *a, Intrapr
 IntraproceduralPointsTo copyPointsToMap(IntraproceduralPointsTo *M) {
     IntraproceduralPointsTo Result;
     for (auto P : *M) {
-        LivenessSet *L = new LivenessSet(*P.second.first);
-        PointsToRelation *R = new PointsToRelation(*P.second.second);
-        Result.insert(std::make_pair(P.first, std::make_pair(L, R)));
+        PointsToRelation *R = new PointsToRelation(*P.second);
+        Result.insert(std::make_pair(P.first, R));
     }
     return Result;
 }
 
-IntraproceduralPointsTo *PointsToData::getPointsTo(const CallString &CS, const Function *F, PointsToRelation &EntryPT, LivenessSet &ExitL, bool &Changed) {
+IntraproceduralPointsTo *PointsToData::getPointsTo(const CallString &CS, const Function *F, PointsToRelation &EntryPT, bool &Changed) {
     assert (!CS.isCyclic() && "Information has already been computed.");
 
     auto P = data.find(F);
@@ -58,13 +54,12 @@ IntraproceduralPointsTo *PointsToData::getPointsTo(const CallString &CS, const F
         if (CS == ICS) {
             auto IData = std::get<1>(*I);
             PointsToRelation IPT = std::get<2>(*I);
-            LivenessSet IL = std::get<3>(*I);
-            if (IPT == EntryPT && IL == ExitL) {
+            if (IPT == EntryPT) {
                 Changed = false;
                 return IData;
             }
             else {
-                *I = std::make_tuple(ICS, IData, IPT, IL);
+                *I = std::make_tuple(ICS, IData, IPT);
                 Changed = true;
                 return IData;
             }
@@ -74,8 +69,8 @@ IntraproceduralPointsTo *PointsToData::getPointsTo(const CallString &CS, const F
     // The call string wasn't found.
     IntraproceduralPointsTo *Out = new IntraproceduralPointsTo();
     for (const_inst_iterator I = inst_begin(F), E = inst_end(F); I != E; ++I)
-        Out->insert({&*I, {new LivenessSet(), new PointsToRelation()}});
-    Pointsto->push_back(std::make_tuple(CS, Out, EntryPT, ExitL));
+        Out->insert({&*I, new PointsToRelation()});
+    Pointsto->push_back(std::make_tuple(CS, Out, EntryPT));
     Changed = true;
     return Out;
 }
@@ -101,7 +96,6 @@ bool PointsToData::attemptMakeCyclicCallString(const Function *F, const CallStri
         auto ICS = std::get<0>(*I);
         auto IData = std::get<1>(*I);
         auto IPT = std::get<2>(*I);
-        auto IL = std::get<3>(*I);
         if (!ICS.isCyclic() &&
             // FIXME: Maybe call is slightly too specific. What about matching
             // the called functions? What about not requiring !empty?
@@ -110,7 +104,7 @@ bool PointsToData::attemptMakeCyclicCallString(const Function *F, const CallStri
             CS.isNonCyclicPrefix(ICS) &&
             arePointsToMapsEqual(F, IData, *Out)) {
             CallString newCS = CS.createCyclicFromPrefix(ICS);
-            *I = std::make_tuple(newCS, Out, IPT, IL);
+            *I = std::make_tuple(newCS, Out, IPT);
             break;
         }
     }

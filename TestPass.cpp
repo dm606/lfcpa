@@ -41,11 +41,7 @@ struct TestPass : public ModulePass {
                     errs() << BB.getName() << ":\n";
                     for (Instruction &I : BB) {
                         auto sv = pt->find(&I)->second;
-                        auto l = sv.first;
-                        auto p = sv.second;
-                        errs() << "Lin: \033[1;31m";
-                        l->dump();
-                        errs() << "\033[0m";
+                        auto p = sv;
                         I.dump();
                         errs() << "Aout: \033[1;32m";
                         p->dump();
