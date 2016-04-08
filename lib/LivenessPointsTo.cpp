@@ -970,10 +970,8 @@ void LivenessPointsTo::addAoutCalledDeclaration(PointsToRelation &S, const CallI
     // unless it has the noalias attribute) anything that is reachable, and
     // something else; anything else points to the same thing that it does in
     // Ain.
-    LivenessSet reachable = LivenessSet();
-    LivenessSet killable = LivenessSet();
-    insertReachableDeclaration(CI, reachable, killable, Ain);
-    LivenessSet addressable = killable;
+    std::set<PointsToNode *> killable = getKillableDeclaration(CI, Ain);
+    std::set<PointsToNode *> addressable = killable;
     PointsToRelation s;
     if (!CI->paramHasAttr(0, Attribute::NoAlias))
         killable.insert(CINode);
@@ -1110,15 +1108,14 @@ bool LivenessPointsTo::computeAout(const CallString &CS, const Instruction *I, P
     }
 }
 
-void LivenessPointsTo::insertReachableDeclaration(const CallInst *CI, LivenessSet &Reachable, LivenessSet &Killable, PointsToRelation &Ain) {
-    std::set<PointsToNode *> seen;
+std::set<PointsToNode *> LivenessPointsTo::getKillableDeclaration(const CallInst *CI, PointsToRelation &Ain) {
+    std::set<PointsToNode *> seen, Killable;
     // FIXME: Can globals be accessed by the function?
     // This is roughly the mark phase from mark-and-sweep garbage collection. We
     // begin with the roots, which are the arguments of the function,  then
     // determine what is reachable using the points-to relation.
     std::function<void(PointsToNode *)> insertReachable = [&](PointsToNode *N) {
         if (seen.insert(N).second) {
-            Reachable.insert(N);
             for (auto P = Ain.pointee_begin(N), E = Ain.pointee_end(N); P != E; ++P) {
                 if (isa<UnknownPointsToNode>(*P))
                     continue;
@@ -1140,6 +1137,8 @@ void LivenessPointsTo::insertReachableDeclaration(const CallInst *CI, LivenessSe
     // Arguments are roots.
     for (Value *V : CI->arg_operands())
         insertReachable(factory.getNode(V));
+
+    return Killable;
 }
 
 std::pair<LivenessSet, PointsToRelation> LivenessPointsTo::getCalledFunctionResult(const CallString &CS, const Function *F) {

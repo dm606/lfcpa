@@ -34,7 +34,7 @@ private:
     void addAoutCalledDeclaration(PointsToRelation &, const CallInst *, PointsToRelation &, LivenessSet &);
     void addAoutAnalysableCalledFunction(PointsToRelation &, const Function *, const CallString &, const CallInst *, PointsToRelation &, LivenessSet &);
     bool computeAout(const CallString &, const Instruction *, PointsToRelation &, PointsToRelation &, LivenessSet &);
-    void insertReachableDeclaration(const CallInst *, LivenessSet &, LivenessSet &, PointsToRelation &);
+    std::set<PointsToNode *> getKillableDeclaration(const CallInst *, PointsToRelation &);
     std::pair<LivenessSet, PointsToRelation> getCalledFunctionResult(const CallString &, const Function *);
     std::set<PointsToNode *> getReturnValues(const Function *);
     LivenessSet computeFunctionExitLiveness(const CallInst *, LivenessSet *);
