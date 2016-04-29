@@ -4,11 +4,16 @@
 
 void PointsToRelation::dump() const {
     bool first = true;
-    for (auto P : s) {
-        if (!first)
-            errs() << ", ";
-        first = false;
-        errs() << P.first->getName() << "-->" << P.second->getName();
+    for (auto *N : PointsToNode::AllNodes) {
+        if (N->singlePointee())
+            continue;
+
+        for (auto I = pointee_begin(N), E = pointee_end(N); I != E; ++I) {
+            if (!first)
+                errs() << ", ";
+            first = false;
+            errs() << N->getName() << "-->" << (*I)->getName();
+        }
     }
     errs() << "\n";
 }

@@ -13,7 +13,6 @@ using namespace llvm;
 namespace {
 struct LivenessBasedAA : public ModulePass, public AliasAnalysis {
     static char ID;
-
     LivenessPointsTo analysis;
 
     LivenessBasedAA() : ModulePass(ID) {}

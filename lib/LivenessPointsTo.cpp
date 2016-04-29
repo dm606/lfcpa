@@ -37,10 +37,7 @@ std::set<PointsToNode *> LivenessPointsTo::getPointsToSet(const Value *V, bool &
                 if (P == std::get<1>(p)->end())
                     return std::set<PointsToNode *>();
                 PointsToRelation *R = P->second.second;
-                std::set<PointsToNode *> s;
-                for (auto Pointee = R->pointee_begin(N), E = R->pointee_end(N); Pointee != E; ++Pointee)
-                    s.insert(*Pointee);
-                return s;
+                return R->getPointees(N);
             }
         }
 
@@ -76,7 +73,7 @@ std::set<PointsToNode *> LivenessPointsTo::getPointsToSet(const Value *V, bool &
     return std::set<PointsToNode *>();
 }
 
-std::pair<PointsToNode *, PointsToNode *> makePointsToPair(PointsToNode *Pointer, PointsToNode *Pointee) {
+void insertPointsToPair(PointsToRelation &R, PointsToNode *Pointer, PointsToNode *Pointee) {
     if (Pointer->pointeesAreSummaryNodes() && !Pointee->isAlwaysSummaryNode()) {
         // If we turn the pointee into a summary node, this may affect what
         // stores to the pointee do. However, these will be added to the
@@ -84,8 +81,8 @@ std::pair<PointsToNode *, PointsToNode *> makePointsToPair(PointsToNode *Pointer
         createdSummaryNode = true;
         Pointee->markAsSummaryNode();
     }
-
-    return {Pointer, Pointee};
+    
+    R.insert(Pointer, Pointee);
 }
 
 bool isLive(PointsToNode *N, LivenessSet &L) {
@@ -269,7 +266,7 @@ void makeDescendantsLive(LivenessSet &Lin, PointsToNode *N) {
 
 void makeDescendantsPointTo(PointsToRelation &Aout, PointsToNode *N, PointsToNode *Pointee, LivenessSet &Lout) {
     if (Lout.find(N) != Lout.end())
-        Aout.insert(makePointsToPair(N, Pointee));
+        insertPointsToPair(Aout, N, Pointee);
 
     for (PointsToNode *D : N->children)
         makeDescendantsPointTo(Aout, D, Pointee, Lout);
@@ -534,11 +531,19 @@ void insertNewPairsLoadInst(PointsToRelation &Aout, PointsToNode *Load, PointsTo
         if (!isLive(Load, Lout))
             return;
 
-        std::set<PointsToNode *> t;
-        for (auto P = Ain.pointee_begin(Ptr), E = Ain.pointee_end(Ptr); P != E; ++P)
-            t.insert(*P);
-        for (auto P = Ain.restriction_begin(t), E = Ain.restriction_end(t); P != E; ++P)
-            Aout.insert(makePointsToPair(Load, P->second));
+        if (Load->pointeesAreSummaryNodes()) {
+            // This is slow, but we have to do it because we may need to create
+            // a summary node.
+            std::set<PointsToNode *> t;
+            for (auto P = Ain.pointee_begin(Ptr), E = Ain.pointee_end(Ptr); P != E; ++P)
+                for (auto Q = Ain.pointee_begin(*P), F = Ain.pointee_end(*P); Q != F; ++Q)
+                    insertPointsToPair(Aout, Load, *Q);
+        }
+        else {
+            // This is faster, but can only be used since we know no summary
+            // nodes have to be created.
+            Aout.insertLoadPairs(Ain, Load, Ptr);
+        }
     }
     else {
         SmallVector<std::pair<IndexList, PointsToNode *>, 8> p, pointees;
@@ -550,7 +555,7 @@ void insertNewPairsLoadInst(PointsToRelation &Aout, PointsToNode *Load, PointsTo
                 for (auto P : p) {
                     switch (matchIndexLists(D.first, P.first)) {
                         case Exact:
-                            Aout.insert(makePointsToPair(D.second, P.second));
+                            insertPointsToPair(Aout, D.second, P.second);
                             break;
                         case Shorter:
                             // If D.second is an aggregate points to pairs will
@@ -578,7 +583,7 @@ void insertNewPairsStoreInst(PointsToRelation &Aout, PointsToNode *Ptr, PointsTo
         for (auto P = Ain.pointee_begin(Ptr), PE = Ain.pointee_end(Ptr); P != PE; ++P) {
             if (Lout.find(*P) != Lout.end())
                 for (auto Q = Ain.pointee_begin(Value), QE = Ain.pointee_end(Value); Q != QE; ++Q)
-                    Aout.insert(makePointsToPair(*P, *Q));
+                    insertPointsToPair(Aout, *P, *Q);
         }
     }
     else {
@@ -591,7 +596,7 @@ void insertNewPairsStoreInst(PointsToRelation &Aout, PointsToNode *Ptr, PointsTo
                 for (auto Q : valuePointees) {
                     switch (matchIndexLists(P.first, Q.first)) {
                         case Exact:
-                            Aout.insert(makePointsToPair(P.second, Q.second));
+                            insertPointsToPair(Aout, P.second, Q.second);
                             break;
                         case Shorter:
                             // FIXME: Does the commmented code (or something
@@ -617,8 +622,16 @@ void insertNewPairsAssignment(PointsToRelation &Aout, PointsToNode *L, PointsToN
         if (Lout.find(L) == Lout.end())
             return;
 
-        for (auto P = Ain.pointee_begin(R), E = Ain.pointee_end(R); P != E; ++P)
-            Aout.insert(makePointsToPair(L, *P));
+        if (L->pointeesAreSummaryNodes()) {
+            // This is slower, but we may need to create summary nodes here.
+            for (auto P = Ain.pointee_begin(R), E = Ain.pointee_end(R); P != E; ++P)
+                insertPointsToPair(Aout, L, *P);
+        }
+        else {
+            // We don't need to create any summary nodes, so the fast option
+            // works.
+            Aout.insertAssignmentPairs(Ain, L, R);
+        }
     }
     else {
         SmallVector<std::pair<IndexList, PointsToNode *>, 8> pointees;
@@ -629,7 +642,7 @@ void insertNewPairsAssignment(PointsToRelation &Aout, PointsToNode *L, PointsToN
                 for (auto P : pointees) {
                     switch (matchIndexLists(D.first, P.first)) {
                         case Exact:
-                            Aout.insert(makePointsToPair(D.second, P.second));
+                            insertPointsToPair(Aout, D.second, P.second);
                             break;
                         case Shorter:
                             // FIXME: Does the commmented code (or something
@@ -696,10 +709,10 @@ void LivenessPointsTo::insertNewPairs(PointsToRelation &Aout, const Instruction 
             if (isa<UnknownPointsToNode>(*P) || !(*P)->isFieldSensitive()) {
                 // We don't know what the pointer points to or we don't treat the pointee field sensitively, so we don't know what
                 // the GEP points to.
-                Aout.insert({N, Unknown});
+                Aout.insert(N, Unknown);
             }
             else
-                Aout.insert({N, factory.getIndexedNode(*P, GEP)});
+                Aout.insert(N, factory.getIndexedNode(*P, GEP));
         }
     }
     else if (const AllocaInst *AI = dyn_cast<AllocaInst>(I)) {
@@ -758,6 +771,7 @@ bool LivenessPointsTo::isArgument(const Function *F, const PointsToNode *N) {
 
     return false;
 }
+
 bool LivenessPointsTo::computeAin(const Instruction *I, const Function *F, PointsToRelation &Ain, LivenessSet &Lin, IntraproceduralPointsTo *Result, bool InsertAtFirstInstruction) {
     // Compute ain for the current instruction.
     PointsToRelation s;
@@ -772,13 +786,12 @@ bool LivenessPointsTo::computeAin(const Instruction *I, const Function *F, Point
                     if (isa<GlobalPointsToNode>(N) || isArgument(F, N)) {
                         // We don't know what globals are initialized to, but they
                         // shouldn't be treated as undefined.
-                        s.insert({N, factory.getInit()});
+                        s.insert(N, factory.getInit());
                     }
-                    else {
-                        std::pair<PointsToNode *, PointsToNode *> p =
-                            std::make_pair(N, factory.getUnknown());
-                        s.insert(p);
-                    }
+                    else if (isa<InitPointsToNode>(N))
+                        s.insert(N, N);
+                    else
+                        s.insert(N, factory.getUnknown());
                 }
             }
         }
@@ -809,9 +822,7 @@ bool LivenessPointsTo::computeAin(const Instruction *I, const Function *F, Point
         }
     }
     if (s != Ain) {
-        assert(s.isSubset(Ain));
-        Ain.clear();
-        Ain.insertAll(s);
+        Ain.replaceWith(s);
         return true;
     }
 
@@ -986,15 +997,20 @@ void LivenessPointsTo::addAoutCalledDeclaration(PointsToRelation &S, const CallI
             // a noalias summary node.
             for (PointsToNode *M : addressable) {
                 if (N != M)
-                    s.insert({N, M});
+                    s.insert(N, M);
             }
 
-            s.insert({N, factory.getUnknown()});
+            s.insert(N, factory.getUnknown());
         }
     }
-    for (auto P = Ain.restriction_begin(Lout), E = Ain.restriction_end(Lout); P != E; ++P)
-        if (killable.find(P->first) == killable.end())
-            s.insert(*P);
+
+    // If a pointer cannot be killed by the call and it is live after it, we
+    // just copy its pairs into Aout.
+    LivenessSet Preserve;
+    for (PointsToNode *N : Lout)
+        if (killable.find(N) == killable.end())
+            Preserve.insert(N);
+    s.unionRelationRestriction(Ain, Preserve);  
 
     S.insertAll(s);
 }
@@ -1009,15 +1025,11 @@ void LivenessPointsTo::addAoutAnalysableCalledFunction(PointsToRelation &S, cons
     auto calledFunctionAout = calledFunctionResult.second;
 
     PointsToRelation s = replaceReturnValuesWithCallInst(CI, calledFunctionAout, returnValues, Lout);
-    for (auto I = Ain.begin(), E = Ain.end(); I != E; ++I) {
-        if (I->first->isSummaryNode(CS)) {
-            // We shouldn't allow the function call to remove
-            // this pair. (Actually it is never *removed*, but
-            // it just isn't discovered in recursive functions).
-            s.insert(*I);
-        }
-    }
 
+    // We shouldn't allow the function to remove pairs in which the Pointer is
+    // a summary node.
+    s.unionRelationRestriction(Ain, PointsToNode::SummaryNodes);
+ 
     S.insertAll(s);
 }
 
@@ -1082,9 +1094,7 @@ bool LivenessPointsTo::computeAout(const CallString &CS, const Instruction *I, P
         }
 
         if (s != Aout) {
-            assert(s.isSubset(Aout));
-            Aout.clear();
-            Aout.insertAll(s);
+            Aout.replaceWith(s);
             return true;
         }
         else
@@ -1098,9 +1108,7 @@ bool LivenessPointsTo::computeAout(const CallString &CS, const Instruction *I, P
         s.unionRelationRestriction(Ain, notKilled);
         insertNewPairs(s, I, Ain, Lout);
         if (s != Aout) {
-            assert(s.isSubset(Aout));
-            Aout.clear();
-            Aout.insertAll(s);
+            Aout.replaceWith(s);
             return true;
         }
         else
@@ -1216,35 +1224,33 @@ LivenessSet LivenessPointsTo::computeFunctionExitLiveness(const CallInst *CI, Li
 }
 
 PointsToRelation LivenessPointsTo::replaceActualArgumentsWithFormal(const Function *Callee, const CallInst *CI, PointsToRelation *Ain) {
-    SmallVector<std::pair<PointsToNode *, PointsToNode *>, 8> ArgMap;
-    auto Arg = Callee->arg_begin();
     PointsToRelation R;
+    std::set<PointsToNode *> ActualArguments;
+    for (Value *V : CI->arg_operands()) {
+        // FIXME: What about varargs functions?
+        ActualArguments.insert(factory.getNode(V));
+    }
+    R.unionComplementRestriction(*Ain, ActualArguments);
+
+    auto Arg = Callee->arg_begin();
     for (Value *V : CI->arg_operands()) {
         PointsToNode *Node = factory.getNode(V);
-        // FIXME: What about varargs functions?
         assert(Arg != Callee->arg_end() && "Argument count mismatch");
         const Argument *A = &*Arg;
         PointsToNode *ANode = factory.getNode(A);
 
-        ArgMap.push_back({Node, ANode});
-        if (Node->singlePointee()) {
-            // These nodes won't be seen in the next loop, so insert the correct
-            // pairs for them into Ain here.
-            R.insert(makePointsToPair(ANode, Node->getSinglePointee()));
+        // This is basically and assignment ANode = Node.
+        if (ANode->pointeesAreSummaryNodes()) {
+            // Slow path: we may have to create summary nodes.
+            for (auto I = Ain->pointee_begin(Node), E = Ain->pointee_end(Node); I != E; ++I)
+                insertPointsToPair(R, ANode, *I);
+        }
+        else {
+            // Fast path: we don't have to create summary nodes.
+            R.insertAssignmentPairs(*Ain, ANode, Node);
         }
 
         ++Arg;
-    }
-
-    for (auto I = Ain->begin(), E = Ain->end(); I != E; ++I) {
-        auto MapE = ArgMap.end();
-        auto MapI = std::find_if(ArgMap.begin(), MapE, [&](std::pair<PointsToNode *, PointsToNode *> P) {
-            return P.first == I->first;
-        });
-        if (MapI != MapE)
-            R.insert(makePointsToPair(MapI->second, I->second));
-        else
-            R.insert(*I);
     }
 
     return R;
@@ -1294,25 +1300,25 @@ LivenessSet LivenessPointsTo::replaceFormalArgumentsWithActual(const CallString 
 }
 
 PointsToRelation LivenessPointsTo::replaceReturnValuesWithCallInst(const CallInst *CI, PointsToRelation &Aout, std::set<PointsToNode *> &ReturnValues, LivenessSet &Lout) {
-    PointsToNode *CINode = factory.getNode(CI);
-    bool CINodeLive = Lout.find(CINode) != Lout.end();
     PointsToRelation R;
-    for (auto I = Aout.begin(), E  = Aout.end(); I != E; ++I) {
-        if (ReturnValues.find(I->first) != ReturnValues.end()) {
-            if (CINodeLive)
-                R.insert(makePointsToPair(CINode, I->second));
-        }
-        else if (Lout.find(I->first) != Lout.end())
-            R.insert(*I);
-    }
-    if (CINodeLive) {
-        for (PointsToNode *N : ReturnValues) {
-            if (N->singlePointee()) {
-                // These nodes will not be seen in the previous loop.
-                R.insert(makePointsToPair(CINode, N->getSinglePointee()));
+    R.unionComplementRestriction(Aout, ReturnValues);
+
+    PointsToNode *CINode = factory.getNode(CI);
+    if (Lout.find(CINode) != Lout.end()) {
+        for (PointsToNode *Node : ReturnValues) {
+            // This is basically an assignment CINode = Node.
+            if (CINode->pointeesAreSummaryNodes()) {
+                // Slow path: we may need to create summary nodes.
+                for (auto I = Aout.pointee_begin(Node), E = Aout.pointee_end(Node); I != E; ++I)
+                    insertPointsToPair(R, CINode, *I);
+            }
+            else {
+                // Fast path: we don't need to create summary nodes.
+                R.insertAssignmentPairs(Aout, CINode, Node);
             }
         }
     }
+
     return R;
 }
 

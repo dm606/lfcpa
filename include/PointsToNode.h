@@ -1,6 +1,9 @@
 #ifndef LFCPA_POINTSTONODE_H
 #define LFCPA_POINTSTONODE_H
 
+#include <bdd.h>
+#include <fdd.h>
+#include <set>
 #include <sstream>
 
 #include "llvm/ADT/StringRef.h"
@@ -18,6 +21,12 @@
 
 using namespace llvm;
 
+enum FDDDomains {
+    LeftDomain = 0,
+    RightDomain = 1,
+    IntermediateDomain = 2
+};
+
 class GEPPointsToNode;
 
 class PointsToNode {
@@ -32,17 +41,29 @@ public:
     };
     friend class GEPPointsToNode;
     friend class PointsToNodeFactory;
+    friend class BuDDyInit;
     friend class LivenessSet;
     friend class LivenessPointsTo;
+    friend class PointsToRelation;
 private:
     const PointsToNodeKind Kind;
 protected:
     StringRef name;
     static int nextId;
+    static int nextVariableNumber;
+    static SmallVector<PointsToNode *, 1024> AllNodes;
+    static std::set<PointsToNode *> SummaryNodes;
+    static bddPair *LeftToIntermediate, *RightToIntermediate, *RightToLeft;
     bool summaryNode = false, summaryNodePointees = false, fieldSensitive = true;
+    bdd Left, Right, Intermediate;
 
-    PointsToNode(PointsToNodeKind K) : Kind(K) {}
+    PointsToNode(PointsToNodeKind K) : Kind(K), Left(fdd_ithvar(LeftDomain, nextVariableNumber)), Right(fdd_ithvar(RightDomain, nextVariableNumber)), Intermediate(fdd_ithvar(IntermediateDomain, nextVariableNumber)) {
+        ++nextVariableNumber;
+        assert(nextVariableNumber<(1<<16));
+        AllNodes.push_back(this);
+    }
 public:
+    static int maxVariables;
     SmallVector<PointsToNode *, 4> children;
     PointsToNodeKind getKind() const { return Kind; }
 
@@ -63,6 +84,7 @@ public:
     inline void markAsSummaryNode() {
         assert(!singlePointee());
         summaryNode = true;
+        SummaryNodes.insert(this);
     }
     virtual bool isAlwaysSummaryNode() const {
         return summaryNode;
@@ -198,13 +220,14 @@ class InitPointsToNode : public PointsToNode {
         InitPointsToNode() : PointsToNode(PTNK_Init) {
             name = "init";
             summaryNode = true;
+            SummaryNodes.insert(this);
             fieldSensitive = false;
         }
 
         bool hasPointerType() const override { return true; }
         bool multipleStackFrames() const override { return true; }
-        bool singlePointee() const override { return true; }
-        PointsToNode *getSinglePointee() const override { return const_cast<InitPointsToNode *>(this); }
+        bool singlePointee() const override { return false; }
+        PointsToNode *getSinglePointee() const override { return nullptr; }
         static bool classof(const PointsToNode *N) {
             return N->getKind() == PTNK_Init;
         }

@@ -7,8 +7,16 @@
 
 #include "PointsToNode.h"
 
+class BuDDyInit {
+    public:
+        BuDDyInit();
+};
+
 class PointsToNodeFactory {
     private:
+        // This object must be created before the unknown and init fields are
+        // initialized.
+        BuDDyInit _buddy;
         DenseMap<const Value *, PointsToNode *> map;
         DenseMap<const Value *, PointsToNode *> noAliasMap;
         DenseMap<const GlobalObject *, PointsToNode *> globalMap;
