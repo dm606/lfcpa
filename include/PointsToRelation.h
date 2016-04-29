@@ -10,7 +10,6 @@
 
 class PointsToRelation {
 public:
-    typedef SmallVector<PointsToNode *, 1024>::const_iterator const_node_iterator;
     class const_pointee_iterator {
     public:
         typedef std::forward_iterator_tag iterator_category;
@@ -19,19 +18,18 @@ public:
         typedef PointsToNode* const* pointer;
         typedef PointsToNode* const& reference;
 
-        const_pointee_iterator(const_node_iterator I, const_node_iterator E, PointsToNode *N, const bdd B) :
+        const_pointee_iterator(PointsToNode *N, const bdd B, bool AtEnd) :
                 single_value(false),
-                I(I),
-                E(E),
                 Value(nullptr),
-                RelevantNodes(B & N->Left) {
-            if (I != E)
-                advanceToNext();
+                CurrentVar(-1),
+                RelevantNodes(bdd_restrict(B, N->Left)) {
+            if (!AtEnd)
+                findNext();
         }
 
         const_pointee_iterator(PointsToNode *Value) : single_value(true), Value(Value) {}
 
-        inline reference operator*() const { return single_value ? Value : *I; }
+        inline reference operator*() const { return single_value ? Value : PointsToNode::AllNodes[CurrentVar]; }
         inline pointer operator->() const { return &operator*(); }
 
         inline bool operator==(const const_pointee_iterator &Y) const {
@@ -39,7 +37,7 @@ public:
             if (single_value)
                 return Value == Y.Value;
             else
-                return I == Y.I || (I == E && Y.I == Y.E);
+                return CurrentVar == Y.CurrentVar || (atEnd() && Y.atEnd());
         }
         inline bool operator !=(const const_pointee_iterator &Y) const {
             return !operator==(Y);
@@ -50,41 +48,36 @@ public:
                 assert(Value);
                 Value = nullptr;
             }
-            else {
-                ++I;
-                advanceToNext();
-            }
+            else
+                findNext();
+
             return *this;
         }
 
-        inline bool atEnd() const { return single_value ? Value == nullptr : I == E; }
+        inline bool atEnd() const { return single_value ? Value == nullptr : CurrentVar < 0; }
     private:
-        inline void advanceToNext() {
-            while (I != E && (RelevantNodes & (*I)->Right) == bdd_false())
-                ++I;
+        inline void findNext() {
+            // RelevantNodes always represents the set of remaining pointees.
+            // We get the next one and then remove it from the set.
+
+            CurrentVar = fdd_scanvar(RelevantNodes, RightDomain);
+            assert((CurrentVar < 0) == (RelevantNodes == bdd_false()));
+
+            if (CurrentVar >= 0)
+                RelevantNodes &= !fdd_ithvar(RightDomain, CurrentVar);
         }
         // This is very ugly -- it essentially implements two different
         // iterators with one class. However, it is significantly simpler than
         // any alternatives.
         bool single_value;
-        const_node_iterator I;
-        const_node_iterator E;
         PointsToNode *Value;
+        int CurrentVar;
         bdd RelevantNodes;
     };
 
     inline std::set<PointsToNode *> getPointees(PointsToNode *N) const {
-        bdd B = s & N->Left;
         std::set<PointsToNode *> Result;
-        if (N->singlePointee())
-            Result.insert(N->getSinglePointee());
-        else {
-            for (PointsToNode *Pointee : PointsToNode::AllNodes) {
-                bdd NodeInRelation = B & Pointee->Right;
-                if (NodeInRelation != bdd_false())
-                    Result.insert(Pointee);
-            }
-        }
+        Result.insert(pointee_begin(N), pointee_end(N));
         return Result;
     }
 
@@ -92,14 +85,14 @@ public:
         if (N->singlePointee())
             return const_pointee_iterator(N->getSinglePointee());
         else
-            return const_pointee_iterator(PointsToNode::AllNodes.begin(), PointsToNode::AllNodes.end(), N, s);
+            return const_pointee_iterator(N, s, false);
     }
 
     inline const_pointee_iterator pointee_end(PointsToNode *N) const {
         if (N->singlePointee())
             return const_pointee_iterator(nullptr);
         else
-            return const_pointee_iterator(PointsToNode::AllNodes.end(), PointsToNode::AllNodes.end(), N, s);
+            return const_pointee_iterator(N, s, true);
     }
 
     inline bool hasPointee(PointsToNode *N) {
