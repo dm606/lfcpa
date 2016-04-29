@@ -166,7 +166,7 @@ public:
         bdd B = bdd_relprod(Pointer->Intermediate & Value->Left, ValuePairs, fdd_ithset(LeftDomain));
 
         // Get the pairs (N, M) and union in the important ones.
-        unionRestrictedBDD(bdd_relprod(PointerPairs, B, fdd_ithset(IntermediateDomain)), L.begin(), L.end());
+        s |= bdd_relprod(PointerPairs, B, fdd_ithset(IntermediateDomain)) & L.B;
     }
 
     inline void insertAssignmentPairs(const PointsToRelation &Ain, const PointsToNode *LHS, const PointsToNode *RHS) {
@@ -217,7 +217,7 @@ public:
     inline void unionRelationRestriction(const PointsToRelation &R, const LivenessSet &L) {
         // Restrict the domain of R to the nodes in L, and then union the
         // result into this.
-        unionRestrictedBDD(R.s, L.begin(), L.end());
+        s |= R.s & L.B;
     }
 
     inline void unionComplementRestriction(const PointsToRelation &R, const std::set<PointsToNode *> &L) {

@@ -53,6 +53,7 @@ protected:
     static int nextVariableNumber;
     static SmallVector<PointsToNode *, 1024> AllNodes;
     static std::set<PointsToNode *> SummaryNodes;
+    static bdd SummaryNodesBDD;
     static bddPair *LeftToIntermediate, *RightToIntermediate, *RightToLeft;
     bool summaryNode = false, summaryNodePointees = false, fieldSensitive = true;
     bdd Left, Right, Intermediate;
@@ -85,6 +86,7 @@ public:
         assert(!singlePointee());
         summaryNode = true;
         SummaryNodes.insert(this);
+        SummaryNodesBDD |= Left;
     }
     virtual bool isAlwaysSummaryNode() const {
         return summaryNode;
@@ -221,6 +223,7 @@ class InitPointsToNode : public PointsToNode {
             name = "init";
             summaryNode = true;
             SummaryNodes.insert(this);
+            SummaryNodesBDD |= Left;
             fieldSensitive = false;
         }
 

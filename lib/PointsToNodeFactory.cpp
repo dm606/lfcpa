@@ -180,4 +180,5 @@ BuDDyInit::BuDDyInit() {
     fdd_setpair(PointsToNode::RightToIntermediate, RightDomain, IntermediateDomain);
     PointsToNode::RightToLeft = bdd_newpair();
     fdd_setpair(PointsToNode::RightToLeft, RightDomain, LeftDomain);
+    PointsToNode::SummaryNodesBDD = bdd_false();
 }

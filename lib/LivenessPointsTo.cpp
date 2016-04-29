@@ -86,7 +86,7 @@ void insertPointsToPair(PointsToRelation &R, PointsToNode *Pointer, PointsToNode
 }
 
 bool isLive(PointsToNode *N, LivenessSet &L) {
-    return N->singlePointee() || !N->hasPointerType() || L.find(N) != L.end();
+    return N->singlePointee() || !N->hasPointerType() || L.contains(N);
 }
 
 bool isDescendantLive(PointsToNode *N, LivenessSet &L) {
@@ -265,7 +265,7 @@ void makeDescendantsLive(LivenessSet &Lin, PointsToNode *N) {
 }
 
 void makeDescendantsPointTo(PointsToRelation &Aout, PointsToNode *N, PointsToNode *Pointee, LivenessSet &Lout) {
-    if (Lout.find(N) != Lout.end())
+    if (Lout.contains(N))
         insertPointsToPair(Aout, N, Pointee);
 
     for (PointsToNode *D : N->children)
@@ -581,7 +581,7 @@ void insertNewPairsLoadInst(PointsToRelation &Aout, PointsToNode *Load, PointsTo
 void insertNewPairsStoreInst(PointsToRelation &Aout, PointsToNode *Ptr, PointsToNode *Value, PointsToNode *Unknown, PointsToRelation &Ain, LivenessSet &Lout) {
     if (!Ptr->isAggregate() && !Value->isAggregate()) {
         for (auto P = Ain.pointee_begin(Ptr), PE = Ain.pointee_end(Ptr); P != PE; ++P) {
-            if (Lout.find(*P) != Lout.end())
+            if (Lout.contains(*P))
                 for (auto Q = Ain.pointee_begin(Value), QE = Ain.pointee_end(Value); Q != QE; ++Q)
                     insertPointsToPair(Aout, *P, *Q);
         }
@@ -592,7 +592,7 @@ void insertNewPairsStoreInst(PointsToRelation &Aout, PointsToNode *Ptr, PointsTo
         unionPointeesWithDescendants(ptrPointees, Ain, l, Ptr);
         unionPointeesWithDescendants(valuePointees, Ain, l, Value);
         for (auto P : ptrPointees) {
-            if (Lout.find(P.second) != Lout.end()) {
+            if (Lout.contains(P.second)) {
                 for (auto Q : valuePointees) {
                     switch (matchIndexLists(P.first, Q.first)) {
                         case Exact:
@@ -619,7 +619,7 @@ void insertNewPairsStoreInst(PointsToRelation &Aout, PointsToNode *Ptr, PointsTo
 
 void insertNewPairsAssignment(PointsToRelation &Aout, PointsToNode *L, PointsToNode *R, PointsToNode *Unknown, PointsToRelation &Ain, LivenessSet &Lout) {
     if (!L->isAggregate() && !R->isAggregate()) {
-        if (Lout.find(L) == Lout.end())
+        if (!Lout.contains(L))
             return;
 
         if (L->pointeesAreSummaryNodes()) {
@@ -638,7 +638,7 @@ void insertNewPairsAssignment(PointsToRelation &Aout, PointsToNode *L, PointsToN
         IndexList l;
         unionPointeesWithDescendants(pointees, Ain, l, R);
         for (auto D : getDescendants(L)) {
-            if (Lout.find(D.second) != Lout.end()) {
+            if (Lout.contains(D.second)) {
                 for (auto P : pointees) {
                     switch (matchIndexLists(D.first, P.first)) {
                         case Exact:
@@ -700,7 +700,7 @@ void LivenessPointsTo::insertNewPairs(PointsToRelation &Aout, const Instruction 
             return;
         }
 
-        if (Lout.find(N) == Lout.end())
+        if (!Lout.contains(N))
             return;
 
         assert(GEP->hasAllConstantIndices());
@@ -757,7 +757,6 @@ void LivenessPointsTo::computeLout(const Instruction *I, LivenessSet& Lout, Intr
         assert(succ_result != Result.end());
         auto succ_lin = succ_result->second.first;
         if (*succ_lin != Lout) {
-            assert(succ_lin->isSubset(Lout));
             Lout.clear();
             Lout.insertAll(*succ_lin);
         }
@@ -880,13 +879,8 @@ void LivenessPointsTo::addLinAnalysableCalledFunction(LivenessSet &N, const Func
     auto calledFunctionAout = calledFunctionResult.second;
 
     LivenessSet n = replaceFormalArgumentsWithActual(CS, Called, CI, calledFunctionLin, Relevant);
-    for (auto I = Lout.begin(), E = Lout.end(); I != E; ++I) {
-        if ((*I)->isSummaryNode(CS)) {
-            // We shouldn't allow the function call to kill this
-            // node.
-            n.insert(*I);
-        }
-    }
+    // We shouldn't allow the function to kill summary nodes.
+    n.insertSummaryNodesFrom(CS, Lout);
 
     // TODO: This isn't very efficient...
     N.insertAll(n);
@@ -946,7 +940,6 @@ bool LivenessPointsTo::computeLin(const CallString &CS, const Instruction *I, Po
         // so don't do anything here. Otherwise, we need to update lin and add
         // the predecessors of the current instruction to the worklist.
         if (n != Lin) {
-            assert(n.isSubset(Lin));
             Lin.clear();
             Lin.insertAll(n);
             return true;
@@ -964,7 +957,6 @@ bool LivenessPointsTo::computeLin(const CallString &CS, const Instruction *I, Po
         // so don't do anything here. Otherwise, we need to update lin and add
         // the predecessors of the current instruction to the worklist.
         if (n != Lin) {
-            assert(n.isSubset(Lin));
             Lin.clear();
             Lin.insertAll(n);
             return true;
@@ -992,7 +984,7 @@ void LivenessPointsTo::addAoutCalledDeclaration(PointsToRelation &S, const CallI
     }
 
     for (PointsToNode *N : killable) {
-        if (Lout.find(N) != Lout.end()) {
+        if (Lout.contains(N)) {
             // N can point to anything that is killable from the callee, plus
             // a noalias summary node.
             for (PointsToNode *M : addressable) {
@@ -1200,15 +1192,10 @@ std::set<PointsToNode *> LivenessPointsTo::getReturnValues(const Function *F) {
 LivenessSet LivenessPointsTo::computeFunctionExitLiveness(const CallInst *CI, LivenessSet *Lout) {
     PointsToNode *CINode = factory.getNode(CI);
 
-    LivenessSet L;
-    for (PointsToNode *N : *Lout) {
-        if (N == CINode) {
-            // Return values will be made live in the correct places when
-            // analysing the function if necessary.
-        }
-        else
-            L.insert(N);
-    }
+    LivenessSet L = *Lout;
+    // Return values will be made live in the correct places when analysing the
+    // function if necessary.
+    L.erase(CINode);
 
     // The values of the arguments are not live at the end of the function
     // because they cannot be modified by the function; the are inserted into
@@ -1216,7 +1203,7 @@ LivenessSet LivenessPointsTo::computeFunctionExitLiveness(const CallInst *CI, Li
     // FIXME: What about varargs?
     for (Value *V : CI->arg_operands()) {
         PointsToNode *ArgNode = factory.getNode(V);
-        if (L.find(ArgNode) != L.end())
+        if (L.contains(ArgNode))
             L.erase(ArgNode);
     }
 
@@ -1283,7 +1270,7 @@ LivenessSet LivenessPointsTo::replaceFormalArgumentsWithActual(const CallString 
         const Argument *A = &*Arg;
         PointsToNode *ANode = factory.getNode(A);
 
-        if (L.find(ANode) != L.end()) {
+        if (L.contains(ANode)) {
             L.erase(ANode);
             L.insert(Node);
         }
@@ -1292,10 +1279,7 @@ LivenessSet LivenessPointsTo::replaceFormalArgumentsWithActual(const CallString 
     }
 
     LivenessSet L2;
-    for (PointsToNode *N : L)
-        if (Relevant.find(N) != Relevant.end())
-            L2.insert(N);
-
+    L2.insertIntersection(L, Relevant);
     return L2;
 }
 
@@ -1304,7 +1288,7 @@ PointsToRelation LivenessPointsTo::replaceReturnValuesWithCallInst(const CallIns
     R.unionComplementRestriction(Aout, ReturnValues);
 
     PointsToNode *CINode = factory.getNode(CI);
-    if (Lout.find(CINode) != Lout.end()) {
+    if (Lout.contains(CINode)) {
         for (PointsToNode *Node : ReturnValues) {
             // This is basically an assignment CINode = Node.
             if (CINode->pointeesAreSummaryNodes()) {
@@ -1487,7 +1471,7 @@ void LivenessPointsTo::runOnFunction(const Function *F, const CallString &CS, In
                         // Add to the list of calls made by the function for analysis later.
                         auto EntryPT = replaceActualArgumentsWithFormal(Called, CI, instruction_ain);
                         auto ExitL = computeFunctionExitLiveness(CI, instruction_lout);
-                        bool RVL = instruction_lout->find(CINode) != instruction_lout->end();
+                        bool RVL = instruction_lout->contains(CINode);
 
                         Calls.push_back(std::make_tuple(CI, Called, EntryPT, ExitL, RVL));
                     }

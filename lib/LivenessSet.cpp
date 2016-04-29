@@ -4,7 +4,7 @@
 
 void LivenessSet::dump() const {
     bool first = true;
-    for (auto N : s) {
+    for (auto *N : *this) {
         if (!first)
             errs() << ", ";
         first = false;

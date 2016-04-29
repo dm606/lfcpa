@@ -7,86 +7,123 @@
 
 class LivenessSet {
     public:
-        typedef std::set<PointsToNode *>::iterator iterator;
-        typedef std::set<PointsToNode *>::const_iterator const_iterator;
-        typedef std::set<PointsToNode *>::size_type size_type;
+    class const_iterator {
+        public:
+            typedef std::forward_iterator_tag iterator_category;
+            typedef PointsToNode* value_type;
+            typedef signed difference_type;
+            typedef PointsToNode* const* pointer;
+            typedef PointsToNode* const& reference;
+
+            const_iterator(const bdd B, bool AtEnd) :
+                    CurrentVar(-1),
+                    RelevantNodes(B) {
+                if (!AtEnd)
+                    findNext();
+            }
+
+            inline reference operator*() const { return PointsToNode::AllNodes[CurrentVar]; }
+            inline pointer operator->() const { return &operator*(); }
+
+            inline bool operator==(const const_iterator &Y) const {
+                return CurrentVar == Y.CurrentVar || (atEnd() && Y.atEnd());
+            }
+
+            inline bool operator!=(const const_iterator &Y) const {
+                return !operator==(Y);
+            }
+
+            const_iterator &operator++() {
+                findNext();
+                return *this;
+            }
+
+            inline bool atEnd() const { return CurrentVar < 0; }
+        private:
+            inline void findNext() {
+                // RelevantNodes always represents the set of remaining nodes.
+                // We get the next one and then remove it from the set.
+
+                CurrentVar = fdd_scanvar(RelevantNodes, LeftDomain);
+                assert((CurrentVar < 0) == (RelevantNodes == bdd_false()));
+
+                if (CurrentVar >= 0)
+                    RelevantNodes &= !fdd_ithvar(LeftDomain, CurrentVar);
+            }
+            int CurrentVar;
+            bdd RelevantNodes;
+        };
+
+        friend class PointsToRelation;
+
+        LivenessSet() : B(bdd_false()) {}
 
         inline const_iterator begin() const {
-            return s.begin();
+            return const_iterator(B, false);
         }
 
-        inline const_iterator find(PointsToNode *N) const {
-            return s.find(N);
+        inline bool contains(const PointsToNode *N) const {
+            bdd R = B & N->Left;
+            assert(R == N->Left || R == bdd_false());
+            return R != bdd_false();
         }
 
         inline const_iterator end() const {
-            return s.end();
-        }
-
-        inline bool empty() const {
-            return s.empty();
-        }
-
-        inline int size() const {
-            return s.size();
+            return const_iterator(B, true);
         }
 
         inline void clear() {
-            s.clear();
+            B = bdd_false();
         }
 
-        inline size_type erase(PointsToNode *N) {
+        inline void erase(PointsToNode *N) {
             // When we kill a node, it's children (i.e. GEPs) are also killed.
             for (PointsToNode *Child : N->children) {
                 assert(isa<GEPPointsToNode>(Child) && "All children of PointsToNodes should be GEPs");
-                s.erase(Child);
+                B &= !Child->Left;
             }
 
-            return s.erase(N);
+            B &= !N->Left;
         }
 
-        inline bool insert(PointsToNode *N) {
+        inline void insert(PointsToNode *N) {
             if (N->singlePointee() || (!N->hasPointerType() && !N->isAlwaysSummaryNode()) || isa<UnknownPointsToNode>(N))
-                return false;
+                return;
 
-            return s.insert(N).second;
+            B |= N->Left;
         }
 
         inline void insertAll(LivenessSet &L) {
-            s.insert(L.begin(), L.end());
+            B |= L.B;
         }
 
         inline bool operator==(const LivenessSet &R) const {
-            return s==R.s;
+            return B == R.B;
         }
 
         inline bool operator!=(const LivenessSet &R) const {
-            return s!=R.s;
+            return B != R.B;
         }
 
         void dump() const;
 
-        bool isSubset(LivenessSet &S) {
-            for (auto N : S) {
-                if (N->isAlwaysSummaryNode())
-                    continue;
-
-                if (s.find(N) == s.end())
-                    return false;
-            }
-            return true;
+        void eraseNonSummaryNodes(const CallString &CS) {
+            // FIXME: Deal with maybe summary nodes properly.
+            B &= PointsToNode::SummaryNodesBDD;
         }
 
-        void eraseNonSummaryNodes(const CallString &CS) {
-            for (auto I = s.begin(), E = s.end(); I != E; ) {
-                if (!(*I)->isSummaryNode(CS))
-                    I = s.erase(I);
-                else
-                    ++I;
-            }
+        void insertSummaryNodesFrom(const CallString &CS, const LivenessSet &L) {
+            // FIXME: Deal with maybe summary nodes properly.
+            // Inserts all of the summary nodes in L into this. Implemented as
+            // a single operation for efficiency.
+            B |= L.B & PointsToNode::SummaryNodesBDD;
+        }
+
+        void insertIntersection(const LivenessSet &L1, const LivenessSet &L2) {
+            B |= L1.B & L2.B;
         }
     private:
-        std::set<PointsToNode *> s;
+        bdd B;
 };
 
 #endif
