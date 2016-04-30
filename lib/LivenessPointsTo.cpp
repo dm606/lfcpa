@@ -1174,15 +1174,9 @@ std::pair<LivenessSet, PointsToRelation> LivenessPointsTo::getCalledFunctionResu
 }
 
 PointsToNodeSet LivenessPointsTo::getReturnValues(const Function *F) {
-    PointsToNodeSet s;
-    for (auto I = inst_begin(F), E = inst_end(F); I != E; ++I)
-    {
-        const Instruction* Inst = &*I;
-        if (const ReturnInst *RI = dyn_cast<ReturnInst>(Inst))
-            if (RI->getReturnValue() != nullptr)
-                s.insert(factory.getNode(RI->getReturnValue()));
-    }
-    return s;
+    auto I = ReturnValues.find(F);
+    assert(I != ReturnValues.end());
+    return I->second;
 }
 
 
@@ -1576,6 +1570,22 @@ bool LivenessPointsTo::runOnFunctionAt(const CallString& CS,
 }
 
 void LivenessPointsTo::runOnModule(Module &M) {
+    for (Function &F : M) {
+        if (!F.isDeclaration()) {
+            PointsToNodeSet Return;
+
+            for (auto I = inst_begin(F), E = inst_end(F); I != E; ++I)
+            {
+                const Instruction* Inst = &*I;
+                if (const ReturnInst *RI = dyn_cast<ReturnInst>(Inst))
+                    if (RI->getReturnValue() != nullptr)
+                        Return.insert(factory.getNode(RI->getReturnValue()));
+            }
+
+            ReturnValues.insert({&F, Return});
+        }
+    }
+    
     for (Function &F : M) {
         if (!F.isDeclaration()) {
             callData.clear();

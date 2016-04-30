@@ -15,6 +15,7 @@ using namespace llvm;
 class LivenessPointsTo {
 public:
     SmallVector<std::tuple<CallString, const Function *, PointsToRelation, LivenessSet, bool>, 64> callData;
+    DenseMap<const Function *, PointsToNodeSet> ReturnValues;
     void runOnModule(Module &);
     ProcedurePointsTo *getPointsTo(Function &) const;
     std::set<PointsToNode *> getPointsToSet(const Value *, bool &);
