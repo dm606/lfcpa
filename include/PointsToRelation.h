@@ -234,6 +234,12 @@ public:
         s |= R.s - bdd_relprod(RestrictedId, RIR, fdd_ithset(IntermediateDomain));
     }
 
+    inline void unionSummaryNodePointers(const PointsToRelation &R) {
+        // Restrict R to pairs with pointers that are summary nodes, and then
+        // union into this. Implemented as a single operation for efficiency.
+        s |= R.s & PointsToNode::SummaryNodesBDD;
+    }
+
     void dump() const;
 private:
     bdd s = bdd_false();

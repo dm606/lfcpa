@@ -15,9 +15,7 @@ class LivenessSet {
             typedef PointsToNode* const* pointer;
             typedef PointsToNode* const& reference;
 
-            const_iterator(const bdd B, bool AtEnd) :
-                    CurrentVar(-1),
-                    RelevantNodes(B) {
+            const_iterator(const bdd B, bool AtEnd) : CurrentVar(-1), RelevantNodes(B) {
                 if (!AtEnd)
                     findNext();
             }
