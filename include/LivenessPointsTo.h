@@ -34,13 +34,13 @@ private:
     void addAoutCalledDeclaration(PointsToRelation &, const CallInst *, PointsToRelation &, LivenessSet &);
     void addAoutAnalysableCalledFunction(PointsToRelation &, const Function *, const CallString &, const CallInst *, PointsToRelation &, LivenessSet &);
     bool computeAout(const CallString &, const Instruction *, PointsToRelation &, PointsToRelation &, LivenessSet &);
-    std::set<PointsToNode *> getKillableDeclaration(const CallInst *, PointsToRelation &);
+    PointsToNodeSet getKillableDeclaration(const CallInst *, PointsToRelation &);
     std::pair<LivenessSet, PointsToRelation> getCalledFunctionResult(const CallString &, const Function *);
-    std::set<PointsToNode *> getReturnValues(const Function *);
+    PointsToNodeSet getReturnValues(const Function *);
     LivenessSet computeFunctionExitLiveness(const CallInst *, LivenessSet *);
     PointsToRelation replaceActualArgumentsWithFormal(const Function *, const CallInst *, PointsToRelation *);
     LivenessSet replaceFormalArgumentsWithActual(const CallString &CS, const Function *, const CallInst *, LivenessSet &, LivenessSet &);
-    PointsToRelation replaceReturnValuesWithCallInst(const CallInst *, PointsToRelation &, std::set<PointsToNode *> &, LivenessSet &);
+    PointsToRelation replaceReturnValuesWithCallInst(const CallInst *, PointsToRelation &, PointsToNodeSet &, LivenessSet &);
     void runOnFunction(const Function *, const CallString &, IntraproceduralPointsTo *, PointsToRelation &, LivenessSet &, bool, SmallVector<std::tuple<const CallInst *, const Function *, PointsToRelation, LivenessSet, bool>, 8> &);
     bool runOnFunctionAt(const CallString &, const Function *, PointsToRelation &, LivenessSet &, bool, bool);
     void addNotInvalidatedRestricted(PointsToRelation &, PointsToRelation *, CallInst *, LivenessSet *);

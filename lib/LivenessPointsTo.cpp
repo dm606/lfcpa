@@ -534,7 +534,6 @@ void insertNewPairsLoadInst(PointsToRelation &Aout, PointsToNode *Load, PointsTo
         if (Load->pointeesAreSummaryNodes()) {
             // This is slow, but we have to do it because we may need to create
             // a summary node.
-            std::set<PointsToNode *> t;
             for (auto P = Ain.pointee_begin(Ptr), E = Ain.pointee_end(Ptr); P != E; ++P)
                 for (auto Q = Ain.pointee_begin(*P), F = Ain.pointee_end(*P); Q != F; ++Q)
                     insertPointsToPair(Aout, Load, *Q);
@@ -872,7 +871,6 @@ void LivenessPointsTo::addLinCalledDeclaration(LivenessSet &N, const CallString 
 void LivenessPointsTo::addLinAnalysableCalledFunction(LivenessSet &N, const Function *Called, const CallString &CS, const CallInst *CI, LivenessSet &Lout, LivenessSet &Relevant) {
     CallString newCS = CS.addCallSite(CI);
     // The set of values that are returned from the function.
-    std::set<PointsToNode *> returnValues = getReturnValues(Called);
 
     std::pair<LivenessSet, PointsToRelation> calledFunctionResult = getCalledFunctionResult(newCS, Called);
     auto calledFunctionLin = calledFunctionResult.first;
@@ -973,35 +971,33 @@ void LivenessPointsTo::addAoutCalledDeclaration(PointsToRelation &S, const CallI
     // unless it has the noalias attribute) anything that is reachable, and
     // something else; anything else points to the same thing that it does in
     // Ain.
-    std::set<PointsToNode *> killable = getKillableDeclaration(CI, Ain);
-    std::set<PointsToNode *> addressable = killable;
+    PointsToNodeSet Killable = getKillableDeclaration(CI, Ain);
+    PointsToNodeSet Addressable = Killable;
     PointsToRelation s;
     if (!CI->paramHasAttr(0, Attribute::NoAlias))
-        killable.insert(CINode);
+        Killable.insert(CINode);
     else {
         PointsToNode *NoAliasNode = factory.getNoAliasNode(CI);
-        killable.insert(NoAliasNode);
+        Killable.insert(NoAliasNode);
     }
 
-    for (PointsToNode *N : killable) {
-        if (Lout.contains(N)) {
-            // N can point to anything that is killable from the callee, plus
-            // a noalias summary node.
-            for (PointsToNode *M : addressable) {
-                if (N != M)
-                    s.insert(N, M);
-            }
-
-            s.insert(N, factory.getUnknown());
+    LivenessSet LiveKillable;
+    LiveKillable.insertIntersection(Lout, Killable);
+    for (PointsToNode *N : LiveKillable) {
+        // N can point to anything that is killable from the callee, plus
+        // a noalias summary node.
+        for (PointsToNode *M : Addressable) {
+            if (N != M)
+                s.insert(N, M);
         }
+
+        s.insert(N, factory.getUnknown());
     }
 
     // If a pointer cannot be killed by the call and it is live after it, we
     // just copy its pairs into Aout.
     LivenessSet Preserve;
-    for (PointsToNode *N : Lout)
-        if (killable.find(N) == killable.end())
-            Preserve.insert(N);
+    Preserve.insertSubtraction(Lout, Killable);
     s.unionRelationRestriction(Ain, Preserve);  
 
     S.insertAll(s);
@@ -1010,13 +1006,13 @@ void LivenessPointsTo::addAoutCalledDeclaration(PointsToRelation &S, const CallI
 void LivenessPointsTo::addAoutAnalysableCalledFunction(PointsToRelation &S, const Function *Called, const CallString &CS, const CallInst *CI, PointsToRelation &Ain, LivenessSet &Lout) {
     CallString newCS = CS.addCallSite(CI);
     // The set of values that are returned from the function.
-    std::set<PointsToNode *> returnValues = getReturnValues(Called);
+    PointsToNodeSet ReturnValues = getReturnValues(Called);
 
     std::pair<LivenessSet, PointsToRelation> calledFunctionResult = getCalledFunctionResult(newCS, Called);
     auto calledFunctionLin = calledFunctionResult.first;
     auto calledFunctionAout = calledFunctionResult.second;
 
-    PointsToRelation s = replaceReturnValuesWithCallInst(CI, calledFunctionAout, returnValues, Lout);
+    PointsToRelation s = replaceReturnValuesWithCallInst(CI, calledFunctionAout, ReturnValues, Lout);
 
     // We shouldn't allow the function to remove pairs in which the Pointer is
     // a summary node.
@@ -1108,14 +1104,15 @@ bool LivenessPointsTo::computeAout(const CallString &CS, const Instruction *I, P
     }
 }
 
-std::set<PointsToNode *> LivenessPointsTo::getKillableDeclaration(const CallInst *CI, PointsToRelation &Ain) {
-    std::set<PointsToNode *> seen, Killable;
+PointsToNodeSet LivenessPointsTo::getKillableDeclaration(const CallInst *CI, PointsToRelation &Ain) {
+    PointsToNodeSet Seen, Killable;
     // FIXME: Can globals be accessed by the function?
     // This is roughly the mark phase from mark-and-sweep garbage collection. We
     // begin with the roots, which are the arguments of the function,  then
     // determine what is reachable using the points-to relation.
     std::function<void(PointsToNode *)> insertReachable = [&](PointsToNode *N) {
-        if (seen.insert(N).second) {
+        if (!Seen.contains(N)) {
+            Seen.insert(N);
             for (auto P = Ain.pointee_begin(N), E = Ain.pointee_end(N); P != E; ++P) {
                 if (isa<UnknownPointsToNode>(*P))
                     continue;
@@ -1176,8 +1173,8 @@ std::pair<LivenessSet, PointsToRelation> LivenessPointsTo::getCalledFunctionResu
     return Result;
 }
 
-std::set<PointsToNode *> LivenessPointsTo::getReturnValues(const Function *F) {
-    std::set<PointsToNode *> s;
+PointsToNodeSet LivenessPointsTo::getReturnValues(const Function *F) {
+    PointsToNodeSet s;
     for (auto I = inst_begin(F), E = inst_end(F); I != E; ++I)
     {
         const Instruction* Inst = &*I;
@@ -1212,7 +1209,7 @@ LivenessSet LivenessPointsTo::computeFunctionExitLiveness(const CallInst *CI, Li
 
 PointsToRelation LivenessPointsTo::replaceActualArgumentsWithFormal(const Function *Callee, const CallInst *CI, PointsToRelation *Ain) {
     PointsToRelation R;
-    std::set<PointsToNode *> ActualArguments;
+    PointsToNodeSet ActualArguments;
     for (Value *V : CI->arg_operands()) {
         // FIXME: What about varargs functions?
         ActualArguments.insert(factory.getNode(V));
@@ -1283,23 +1280,23 @@ LivenessSet LivenessPointsTo::replaceFormalArgumentsWithActual(const CallString 
     return L2;
 }
 
-PointsToRelation LivenessPointsTo::replaceReturnValuesWithCallInst(const CallInst *CI, PointsToRelation &Aout, std::set<PointsToNode *> &ReturnValues, LivenessSet &Lout) {
+PointsToRelation LivenessPointsTo::replaceReturnValuesWithCallInst(const CallInst *CI, PointsToRelation &Aout, PointsToNodeSet &ReturnValues, LivenessSet &Lout) {
     PointsToRelation R;
     R.unionComplementRestriction(Aout, ReturnValues);
 
     PointsToNode *CINode = factory.getNode(CI);
     if (Lout.contains(CINode)) {
-        for (PointsToNode *Node : ReturnValues) {
-            // This is basically an assignment CINode = Node.
-            if (CINode->pointeesAreSummaryNodes()) {
-                // Slow path: we may need to create summary nodes.
+        if (CINode->pointeesAreSummaryNodes()) {
+            // Slow path: we may need to create summary nodes.
+            for (PointsToNode *Node : ReturnValues) {
+                // This is basically an assignment CINode = Node.
                 for (auto I = Aout.pointee_begin(Node), E = Aout.pointee_end(Node); I != E; ++I)
                     insertPointsToPair(R, CINode, *I);
             }
-            else {
-                // Fast path: we don't need to create summary nodes.
-                R.insertAssignmentPairs(Aout, CINode, Node);
-            }
+        }
+        else {
+            // Fast path: we don't need to create summary nodes.
+            R.insertMultipleAssignmentPairs(Aout, CINode, ReturnValues);
         }
     }
 

@@ -183,6 +183,20 @@ public:
         s |= bdd_relprod(LHS->Left & RHS->Intermediate, RHSPairs, fdd_ithset(IntermediateDomain));
     }
 
+    inline void insertMultipleAssignmentPairs(const PointsToRelation &Ain, const PointsToNode *N, const PointsToNodeSet &S) {
+        // If Ain contains a pair (M, M') for a node M in S, then insert the
+        // pair (N, M') into Ain.
+
+        // Ain.s is a subset of Left * Right but we need a version that is a
+        // subset of Intermediate * Right.
+        bdd AinIR = bdd_replace(Ain.s, PointsToNode::LeftToIntermediate);
+
+        // Create the relation containing pairs (N, M) for each M in S.
+        bdd NS = N->Left & bdd_replace(S.B, PointsToNode::LeftToIntermediate);
+
+        s |= bdd_relprod(NS, AinIR, fdd_ithset(IntermediateDomain));
+    }
+
     inline void insert(const PointsToNode *Pointer, const PointsToNode *Pointee) {
         if (Pointer->singlePointee()) {
             assert((Pointer->getSinglePointee() == Pointee || isa<UnknownPointsToNode>(Pointee)) && "Pointer shouldn't point to Pointee.");
@@ -208,30 +222,16 @@ public:
         s |= R.s;
     }
 
-    inline void unionRelationRestriction(const PointsToRelation &R, const std::set<PointsToNode *> &L) {
-        // Restrict the domain of R to the nodes in L, and then union the
-        // result into this.
-        unionRestrictedBDD(R.s, L.begin(), L.end());
-    }
-
     inline void unionRelationRestriction(const PointsToRelation &R, const LivenessSet &L) {
         // Restrict the domain of R to the nodes in L, and then union the
         // result into this.
         s |= R.s & L.B;
     }
 
-    inline void unionComplementRestriction(const PointsToRelation &R, const std::set<PointsToNode *> &L) {
+    inline void unionComplementRestriction(const PointsToRelation &R, const PointsToNodeSet &L) {
         // Restrict the domain of R to the nodes not in L, and then union the
         // result into this.
-        // The idea is to construct the BDD for the relation
-        //   {(x, x) | x in L}
-        // and then to compose R with this, and then subtract this from R.
-        bdd RestrictedId = bdd_false();
-        for (PointsToNode *N : L)
-            RestrictedId |= N->Left & N->Intermediate;
-        bdd RIR = bdd_replace(R.s, PointsToNode::LeftToIntermediate);
-
-        s |= R.s - bdd_relprod(RestrictedId, RIR, fdd_ithset(IntermediateDomain));
+        s |= R.s & !L.B;
     }
 
     inline void unionSummaryNodePointers(const CallString &CS, const PointsToRelation &R) {
@@ -243,20 +243,6 @@ public:
     void dump() const;
 private:
     bdd s = bdd_false();
-
-    inline void unionRestrictedBDD(bdd B, std::set<PointsToNode *>::const_iterator Begin, std::set<PointsToNode *>::const_iterator End) {
-        // Restrict the domain of R to the nodes in the range [Begin, End), and
-        // then union the result into this.
-        // The idea is to construct the BDD for the relation
-        //   {(x, x) | x in L}
-        // and then to compose R with this.
-        bdd RestrictedId = bdd_false();
-        for (auto I = Begin; I != End; ++I)
-            RestrictedId |= (*I)->Left & (*I)->Intermediate;
-        bdd RIR = bdd_replace(B, PointsToNode::LeftToIntermediate);
-
-        s |= bdd_relprod(RestrictedId, RIR, fdd_ithset(IntermediateDomain));  
-    }
 };
 
 #endif

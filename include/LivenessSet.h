@@ -5,7 +5,9 @@
 
 #include "PointsToNode.h"
 
-class LivenessSet {
+class LivenessSet;
+
+class PointsToNodeSet {
     public:
     class const_iterator {
         public:
@@ -54,7 +56,7 @@ class LivenessSet {
 
         friend class PointsToRelation;
 
-        LivenessSet() : B(bdd_false()) {}
+        PointsToNodeSet() : B(bdd_false()) {}
 
         inline const_iterator begin() const {
             return const_iterator(B, false);
@@ -74,6 +76,41 @@ class LivenessSet {
             B = bdd_false();
         }
 
+        virtual void insert(const PointsToNode *N) {
+            B |= N->Left;
+        }
+
+        inline bool operator==(const PointsToNodeSet &R) const {
+            return B == R.B;
+        }
+
+        inline bool operator!=(const PointsToNodeSet &R) const {
+            return B != R.B;
+        }
+
+        void dump() const;
+
+        void eraseNonSummaryNodes(const CallString &CS) {
+            B &= PointsToNode::getSummaryNodeBDD(CS);
+        }
+
+        void insertSummaryNodesFrom(const CallString &CS, const PointsToNodeSet &L) {
+            // Inserts all of the summary nodes in L into this. Implemented as
+            // a single operation for efficiency.
+            B |= L.B & PointsToNode::getSummaryNodeBDD(CS);
+        }
+
+        inline void insertSubtraction(const LivenessSet &, const PointsToNodeSet &);
+        inline void insertIntersection(const LivenessSet &, const PointsToNodeSet &);
+        inline void insertAll(const LivenessSet &);
+
+        virtual ~PointsToNodeSet() {}
+    protected:
+        bdd B;
+};
+
+class LivenessSet : public PointsToNodeSet {
+    public:
         inline void erase(PointsToNode *N) {
             // When we kill a node, it's children (i.e. GEPs) are also killed.
             for (PointsToNode *Child : N->children) {
@@ -84,42 +121,23 @@ class LivenessSet {
             B &= !N->Left;
         }
 
-        inline void insert(PointsToNode *N) {
+        void insert(const PointsToNode *N) override {
             if (N->singlePointee() || (!N->hasPointerType() && !N->isAlwaysSummaryNode()) || isa<UnknownPointsToNode>(N))
                 return;
-
-            B |= N->Left;
+            PointsToNodeSet::insert(N);
         }
-
-        inline void insertAll(LivenessSet &L) {
-            B |= L.B;
-        }
-
-        inline bool operator==(const LivenessSet &R) const {
-            return B == R.B;
-        }
-
-        inline bool operator!=(const LivenessSet &R) const {
-            return B != R.B;
-        }
-
-        void dump() const;
-
-        void eraseNonSummaryNodes(const CallString &CS) {
-            B &= PointsToNode::getSummaryNodeBDD(CS);
-        }
-
-        void insertSummaryNodesFrom(const CallString &CS, const LivenessSet &L) {
-            // Inserts all of the summary nodes in L into this. Implemented as
-            // a single operation for efficiency.
-            B |= L.B & PointsToNode::getSummaryNodeBDD(CS);
-        }
-
-        void insertIntersection(const LivenessSet &L1, const LivenessSet &L2) {
-            B |= L1.B & L2.B;
-        }
-    private:
-        bdd B;
 };
+
+inline void PointsToNodeSet::insertAll(const LivenessSet &L) {
+    B |= L.B;
+}
+
+inline void PointsToNodeSet::insertIntersection(const LivenessSet &L1, const PointsToNodeSet &L2) {
+    B |= L1.B & L2.B;
+}
+
+inline void PointsToNodeSet::insertSubtraction(const LivenessSet &L1, const PointsToNodeSet &L2) {
+    B |= L1.B - L2.B;
+}
 
 #endif

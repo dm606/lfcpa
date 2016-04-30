@@ -42,6 +42,7 @@ public:
     friend class GEPPointsToNode;
     friend class PointsToNodeFactory;
     friend class BuDDyInit;
+    friend class PointsToNodeSet;
     friend class LivenessSet;
     friend class LivenessPointsTo;
     friend class PointsToRelation;
