@@ -1194,8 +1194,7 @@ LivenessSet LivenessPointsTo::computeFunctionExitLiveness(const CallInst *CI, Li
     // FIXME: What about varargs?
     for (Value *V : CI->arg_operands()) {
         PointsToNode *ArgNode = factory.getNode(V);
-        if (L.contains(ArgNode))
-            L.erase(ArgNode);
+        L.erase(ArgNode);
     }
 
     return L;
