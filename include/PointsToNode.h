@@ -52,6 +52,7 @@ protected:
     static int nextId;
     static int nextVariableNumber;
     static SmallVector<PointsToNode *, 1024> AllNodes;
+    static SmallVector<PointsToNode *, 1024> MaybeSummaryNodes;
     static bdd SummaryNodesBDD;
     static bddPair *LeftToIntermediate, *RightToIntermediate, *RightToLeft;
     bool summaryNode = false, summaryNodePointees = false, fieldSensitive = true;
@@ -119,6 +120,22 @@ public:
     }
     virtual const Function *getFunction() const {
         return nullptr;
+    }
+
+    static bdd getSummaryNodeBDD(const CallString &CS) {
+        // Get the BDD which contains the set of summary nodes are the call
+        // string. These are the nodes that are always summary nodes (in
+        // SummaryNodesBDD), or noalias nodes which are reached more than once
+        // by the call string.
+
+        if (CS.isEmpty())
+            return SummaryNodesBDD;
+
+        bdd B = SummaryNodesBDD;
+        for (PointsToNode *N : MaybeSummaryNodes)
+            if (N->isSummaryNode(CS))
+                B |= N->Left;
+        return B;
     }
 };
 
@@ -245,6 +262,7 @@ class NoAliasPointsToNode : public PointsToNode {
             auto Ty = getEffectiveType(AI);
             assert(Ty->isPointerTy());
             isPointer = Ty->getPointerElementType()->isPointerTy();
+            MaybeSummaryNodes.push_back(this);
         }
         NoAliasPointsToNode(const CallInst *CI) : PointsToNode(PTNK_NoAlias), Definer(CI->getParent()->getParent()) {
             assert(CI->paramHasAttr(0, Attribute::NoAlias));
@@ -253,6 +271,7 @@ class NoAliasPointsToNode : public PointsToNode {
             auto Ty = getEffectiveType(CI);
             assert(Ty->isPointerTy());
             isPointer = Ty->getPointerElementType()->isPointerTy();
+            MaybeSummaryNodes.push_back(this);
         }
 
         bool hasPointerType() const override { return isPointer; }

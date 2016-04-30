@@ -1020,7 +1020,7 @@ void LivenessPointsTo::addAoutAnalysableCalledFunction(PointsToRelation &S, cons
 
     // We shouldn't allow the function to remove pairs in which the Pointer is
     // a summary node.
-    s.unionSummaryNodePointers(Ain);
+    s.unionSummaryNodePointers(CS, Ain);
  
     S.insertAll(s);
 }

@@ -106,15 +106,13 @@ class LivenessSet {
         void dump() const;
 
         void eraseNonSummaryNodes(const CallString &CS) {
-            // FIXME: Deal with maybe summary nodes properly.
-            B &= PointsToNode::SummaryNodesBDD;
+            B &= PointsToNode::getSummaryNodeBDD(CS);
         }
 
         void insertSummaryNodesFrom(const CallString &CS, const LivenessSet &L) {
-            // FIXME: Deal with maybe summary nodes properly.
             // Inserts all of the summary nodes in L into this. Implemented as
             // a single operation for efficiency.
-            B |= L.B & PointsToNode::SummaryNodesBDD;
+            B |= L.B & PointsToNode::getSummaryNodeBDD(CS);
         }
 
         void insertIntersection(const LivenessSet &L1, const LivenessSet &L2) {
