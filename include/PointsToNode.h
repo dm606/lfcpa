@@ -53,7 +53,7 @@ protected:
     StringRef name;
     static int nextId;
     static int nextVariableNumber;
-    static SmallVector<PointsToNode *, 1024> AllNodes;
+    static SmallVector<PointsToNode *, MAX_NODE_COUNT> AllNodes;
     static SmallVector<PointsToNode *, 1024> MaybeSummaryNodes;
     static bdd SummaryNodesBDD;
     static bddPair *LeftToIntermediate, *RightToIntermediate, *RightToLeft;
