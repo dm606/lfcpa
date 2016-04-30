@@ -18,6 +18,7 @@
 #include "CallString.h"
 
 #define MAX_DESCENDANT_LEVEL 8
+#define MAX_NODE_COUNT ((1<<17) + (1<<16))
 
 using namespace llvm;
 
@@ -61,7 +62,7 @@ protected:
 
     PointsToNode(PointsToNodeKind K) : Kind(K), Left(fdd_ithvar(LeftDomain, nextVariableNumber)), Right(fdd_ithvar(RightDomain, nextVariableNumber)), Intermediate(fdd_ithvar(IntermediateDomain, nextVariableNumber)) {
         ++nextVariableNumber;
-        assert(nextVariableNumber<(1<<16));
+        assert(nextVariableNumber<MAX_NODE_COUNT);
         AllNodes.push_back(this);
     }
 public:
