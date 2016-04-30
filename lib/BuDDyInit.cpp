@@ -1,12 +1,17 @@
 #include "BuDDyInit.h"
 #include "PointsToNode.h"
 
+#define BUDDY_NODENUM 1000000
+#define BUDDY_CACHESIZE 100000
+#define BUDDY_MAXINCREASE 100000
+
 BuDDyInit::BuDDyInit() {
     if (bdd_isrunning())
         return;
 
-    // TODO: Tune
-    bdd_init(1000, 1000);
+    bdd_init(BUDDY_NODENUM, BUDDY_CACHESIZE);
+    bdd_setmaxincrease(BUDDY_MAXINCREASE);
+
     // Use three domains -- one for the left hand sides of pairs, one for the
     // right, and one for intermediate relations.
     int domains[3] = {MAX_NODE_COUNT, MAX_NODE_COUNT, MAX_NODE_COUNT};
