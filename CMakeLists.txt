@@ -18,6 +18,7 @@ include_directories(include)
 add_llvm_loadable_module(
     lfcpa
     TestPass.cpp
+    lib/BuDDyInit.cpp
     lib/CallString.cpp
     lib/LivenessBasedAA.cpp
     lib/LivenessPointsTo.cpp

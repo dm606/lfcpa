@@ -5,12 +5,8 @@
 #include "llvm/IR/Operator.h"
 #include "llvm/IR/Value.h"
 
+#include "BuDDyInit.h"
 #include "PointsToNode.h"
-
-class BuDDyInit {
-    public:
-        BuDDyInit();
-};
 
 class PointsToNodeFactory {
     private:
