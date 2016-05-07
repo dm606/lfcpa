@@ -29,7 +29,7 @@ public:
 
         const_pointee_iterator(PointsToNode *Value) : single_value(true), Value(Value) {}
 
-        inline reference operator*() const { return single_value ? Value : PointsToNode::AllNodes[CurrentVar]; }
+        inline reference operator*() const { return Value; }
         inline pointer operator->() const { return &operator*(); }
 
         inline bool operator==(const const_pointee_iterator &Y) const {
@@ -63,8 +63,10 @@ public:
             CurrentVar = fdd_scanvar(RelevantNodes, RightDomain);
             assert((CurrentVar < 0) == (RelevantNodes == bdd_false()));
 
-            if (CurrentVar >= 0)
+            if (CurrentVar >= 0) {
                 RelevantNodes &= !fdd_ithvar(RightDomain, CurrentVar);
+                Value = PointsToNode::AllNodes[CurrentVar];
+            }
         }
         // This is very ugly -- it essentially implements two different
         // iterators with one class. However, it is significantly simpler than
