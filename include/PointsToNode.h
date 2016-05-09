@@ -18,7 +18,7 @@
 #include "CallString.h"
 
 #define MAX_DESCENDANT_LEVEL 8
-#define MAX_NODE_COUNT ((1<<17) + (1<<16))
+#define MAX_NODE_COUNT (1<<18)
 
 using namespace llvm;
 

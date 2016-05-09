@@ -1,9 +1,9 @@
 #include "BuDDyInit.h"
 #include "PointsToNode.h"
 
-#define BUDDY_NODENUM 1000000
-#define BUDDY_CACHESIZE 100000
-#define BUDDY_MAXINCREASE 100000
+#define BUDDY_NODENUM 4000000
+#define BUDDY_CACHESIZE 400000
+#define BUDDY_MAXINCREASE 400000
 
 BuDDyInit::BuDDyInit() {
     if (bdd_isrunning())
@@ -25,3 +25,4 @@ BuDDyInit::BuDDyInit() {
     fdd_setpair(PointsToNode::RightToLeft, RightDomain, LeftDomain);
     PointsToNode::SummaryNodesBDD = bdd_false();
 }
+
