@@ -34,7 +34,7 @@ private:
     std::set<PointsToNode *> getReturnValues(const Function *);
     PointsToRelation replaceActualArgumentsWithFormal(const Function *, const CallInst *, PointsToRelation *);
     LivenessSet replaceFormalArgumentsWithActual(const CallString &CS, const Function *, const CallInst *, LivenessSet &, LivenessSet &);
-    PointsToRelation replaceReturnValuesWithCallInst(const CallInst *, PointsToRelation &, std::set<PointsToNode *> &);
+    PointsToRelation replaceReturnValuesWithCallInst(const CallString &CS, const CallInst *, PointsToRelation &, std::set<PointsToNode *> &);
     void runOnFunction(const Function *, const CallString &, IntraproceduralPointsTo *, PointsToRelation &, SmallVector<std::tuple<const CallInst *, const Function *, PointsToRelation>, 8> &);
     bool runOnFunctionAt(const CallString &, const Function *, PointsToRelation &, bool);
     void addNotInvalidatedRestricted(PointsToRelation &, PointsToRelation *, CallInst *);

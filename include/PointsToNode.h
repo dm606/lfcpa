@@ -98,6 +98,9 @@ public:
     virtual const Function *getFunction() const {
         return nullptr;
     }
+    virtual const Function *getDefiner() const {
+        return nullptr;
+    }
 };
 
 class UnknownPointsToNode : public PointsToNode {
@@ -137,6 +140,7 @@ class ValuePointsToNode : public PointsToNode {
         std::string stdName;
         bool isPointer, userOrArg;
         PointsToNode *Pointee;
+        const Function *Definer;
     public:
         ValuePointsToNode(const Value *V, PointsToNode *Pointee) : PointsToNode(PTNK_Value), Pointee(Pointee) {
             assert(V != nullptr);
@@ -147,6 +151,10 @@ class ValuePointsToNode : public PointsToNode {
             }
             isPointer = getEffectiveType(V)->isPointerTy();
             userOrArg = isa<User>(V) || isa<Argument>(V);
+            if (const Instruction *I = dyn_cast<Instruction>(V))
+                Definer = I->getParent()->getParent();
+            else
+                Definer = nullptr;
         }
 
         ValuePointsToNode(const Value *V) : ValuePointsToNode(V, nullptr) {}
@@ -161,6 +169,10 @@ class ValuePointsToNode : public PointsToNode {
 
         static bool classof(const PointsToNode *N) {
             return N->getKind() == PTNK_Value;
+        }
+
+        const Function *getDefiner() const override {
+            return Definer;
         }
 };
 
@@ -248,6 +260,10 @@ class NoAliasPointsToNode : public PointsToNode {
 
         static bool classof(const PointsToNode *N) {
             return N->getKind() == PTNK_NoAlias;
+        }
+
+        const Function *getDefiner() const override {
+            return Definer;
         }
 };
 
@@ -368,6 +384,10 @@ class GEPPointsToNode : public PointsToNode {
                 }
             }
             return std::make_pair(Parent, resultIndices);
+        }
+
+        const Function *getDefiner() const override {
+            return Parent->getDefiner();
         }
 };
 

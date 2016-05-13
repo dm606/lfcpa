@@ -697,7 +697,7 @@ void LivenessPointsTo::addAoutAnalysableCalledFunction(PointsToRelation &S, cons
     PointsToRelation calledFunctionResult = getCalledFunctionResult(newCS, Called);
     auto calledFunctionAout = calledFunctionResult;
 
-    PointsToRelation s = replaceReturnValuesWithCallInst(CI, calledFunctionAout, returnValues);
+    PointsToRelation s = replaceReturnValuesWithCallInst(CS, CI, calledFunctionAout, returnValues);
     for (auto I = Ain.begin(), E = Ain.end(); I != E; ++I) {
         if (I->first->isSummaryNode(CS)) {
             // We shouldn't allow the function call to remove
@@ -957,13 +957,13 @@ LivenessSet LivenessPointsTo::replaceFormalArgumentsWithActual(const CallString 
     return L2;
 }
 
-PointsToRelation LivenessPointsTo::replaceReturnValuesWithCallInst(const CallInst *CI, PointsToRelation &Aout, std::set<PointsToNode *> &ReturnValues) {
+PointsToRelation LivenessPointsTo::replaceReturnValuesWithCallInst(const CallString &CS, const CallInst *CI, PointsToRelation &Aout, std::set<PointsToNode *> &ReturnValues) {
     PointsToNode *CINode = factory.getNode(CI);
     PointsToRelation R;
     for (auto I = Aout.begin(), E  = Aout.end(); I != E; ++I) {
         if (ReturnValues.find(I->first) != ReturnValues.end())
             R.insert(makePointsToPair(CINode, I->second));
-        else if (I->first->getFunction() == nullptr || I->first->getFunction() != CI->getCalledFunction())
+        else if (I->first->getDefiner() == nullptr || CS.addCallSite(CI).reachedMoreThanOnce(I->first->getDefiner()))
             R.insert(*I);
     }
     for (PointsToNode *N : ReturnValues) {
