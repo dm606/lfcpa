@@ -40,6 +40,14 @@ class CallString {
             return nonCyclic.back();
         }
 
+
+        inline const Function *getLastCalledFunction() const {
+            if (const CallInst *CI = dyn_cast<CallInst>(getLastCall()))
+                return CI->getCalledFunction();
+
+            return nullptr;
+        }
+
         inline bool containsCallIn(const Function *F) const {
             for (const Instruction *I : nonCyclic)
                 if (const CallInst *CI = dyn_cast<CallInst>(I))
