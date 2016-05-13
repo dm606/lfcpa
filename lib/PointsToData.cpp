@@ -87,6 +87,7 @@ bool PointsToData::attemptMakeCyclicCallString(const Function *F, const CallStri
         return false;
 
     auto LastCall = CS.getLastCall();
+    auto LastCalledFunction = CS.getLastCalledFunction();
 
     auto pair = data.find(F);
     assert(pair != data.end());
@@ -102,11 +103,7 @@ bool PointsToData::attemptMakeCyclicCallString(const Function *F, const CallStri
         auto IData = std::get<1>(*I);
         auto IPT = std::get<2>(*I);
         auto IL = std::get<3>(*I);
-        if (!ICS.isCyclic() &&
-            // FIXME: Maybe call is slightly too specific. What about matching
-            // the called functions? What about not requiring !empty?
-            !ICS.isEmpty() &&
-            ICS.getLastCall() == LastCall &&
+        if ((ICS.isEmpty() || ICS.getLastCall() == LastCall || (LastCalledFunction != nullptr && ICS.getLastCalledFunction() == LastCalledFunction)) &&
             CS.isNonCyclicPrefix(ICS) &&
             arePointsToMapsEqual(F, IData, *Out)) {
             CallString newCS = CS.createCyclicFromPrefix(ICS);
