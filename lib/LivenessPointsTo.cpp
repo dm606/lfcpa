@@ -963,7 +963,7 @@ PointsToRelation LivenessPointsTo::replaceReturnValuesWithCallInst(const CallIns
     for (auto I = Aout.begin(), E  = Aout.end(); I != E; ++I) {
         if (ReturnValues.find(I->first) != ReturnValues.end())
             R.insert(makePointsToPair(CINode, I->second));
-        else
+        else if (I->first->getFunction() == nullptr || I->first->getFunction() != CI->getCalledFunction())
             R.insert(*I);
     }
     for (PointsToNode *N : ReturnValues) {
