@@ -305,8 +305,6 @@ void makeChildren(PointsToNode *NoChildren, PointsToNode *SomeChildren) {
             continue;
         assert(isa<GEPPointsToNode>(D.second));
         GEPPointsToNode *N = cast<GEPPointsToNode>(D.second);
-        // FIXME: Do these nodes always have pointer type?
-        assert(N->NodeType->isPointerTy());
         PointsToNode *Pointee = nullptr;
         if (NoChildren->singlePointee()) {
             Type *T = N->NodeType->getPointerElementType();
@@ -400,13 +398,7 @@ void insertNewPairsLoadInst(PointsToRelation &Aout, PointsToNode *Load, PointsTo
                     case Shorter:
                         // If D.second is an aggregate points to pairs will
                         // be added for its children.
-                        // FIXME: Does the commmented code (or something
-                        // similar) need executing?
                         (void)Unknown;
-                        /*
-                        if (!D.second->isAggregate())
-                            Aout.insert({D.second, Unknown});
-                        */
                         break;
                     case Longer:
                     case NoMatch:
@@ -436,13 +428,7 @@ void insertNewPairsStoreInst(PointsToRelation &Aout, PointsToNode *Ptr, PointsTo
                         Aout.insert(makePointsToPair(P.second, Q.second));
                         break;
                     case Shorter:
-                        // FIXME: Does the commmented code (or something
-                        // similar) need executing?
                         (void)Unknown;
-                        /*
-                        if (!P.second->isAggregate())
-                            Aout.insert({P.second, Unknown});
-                        */
                         break;
                     case Longer:
                     case NoMatch:
@@ -798,7 +784,6 @@ bool LivenessPointsTo::computeAout(const CallString &CS, const Instruction *I, P
 
 std::set<PointsToNode *> LivenessPointsTo::getKillableDeclaration(const CallInst *CI, PointsToRelation &Ain) {
     std::set<PointsToNode *> seen, Killable;
-    // FIXME: Can globals be accessed by the function?
     // This is roughly the mark phase from mark-and-sweep garbage collection. We
     // begin with the roots, which are the arguments of the function,  then
     // determine what is reachable using the points-to relation.
