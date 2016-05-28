@@ -455,13 +455,7 @@ void insertNewPairsAssignment(PointsToRelation &Aout, PointsToNode *L, PointsToN
                         Aout.insert(makePointsToPair(D.second, P.second));
                         break;
                     case Shorter:
-                        // FIXME: Does the commmented code (or something
-                        // similar) need executing?
                         (void)Unknown;
-                        /*
-                        if (!D.second->isAggregate())
-                            Aout.insert({D.second, Unknown});
-                        */
                         break;
                     case Longer:
                     case NoMatch:
