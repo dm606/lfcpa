@@ -43,8 +43,6 @@ std::set<PointsToNode *> LivenessPointsTo::getPointsToSet(const Value *V, bool &
                 return s;
             }
         }
-
-        llvm_unreachable("Couldn't find any points-to data for V.");
     }
     else if (const GlobalVariable *G = dyn_cast<GlobalVariable>(V)) {
         std::set<PointsToNode *> s;
@@ -847,7 +845,6 @@ PointsToRelation LivenessPointsTo::getCalledFunctionResult(const CallString &CS,
     auto FirstInst = inst_begin(F);
     assert(FirstInst != inst_end(F));
     auto I = PT->find(&*FirstInst);
-    assert(I != PT->end());
     Result = *I->second;
 
     // For Aout, we need to union over all of the PointsToRelations associated
@@ -857,7 +854,6 @@ PointsToRelation LivenessPointsTo::getCalledFunctionResult(const CallString &CS,
         const Instruction *Inst = &*I;
         if (isa<ReturnInst>(Inst)) {
             auto J = PT->find(Inst);
-            assert(J != PT->end());
             aout.insertAll(*J->second);
         }
     }

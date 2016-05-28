@@ -30,18 +30,19 @@ class CallString {
         }
 
         inline int size() const {
-            assert (!isCyclic());
             return nonCyclic.size();
         }
 
         inline const Instruction *getLastCall() const {
-            assert(!isCyclic());
-            assert(!isEmpty());
+            if (nonCyclic.empty())
+                return nullptr;
             return nonCyclic.back();
         }
 
 
         inline const Function *getLastCalledFunction() const {
+            if (getLastCall() == nullptr)
+                return nullptr;
             if (const CallInst *CI = dyn_cast<CallInst>(getLastCall()))
                 return CI->getCalledFunction();
 
@@ -61,7 +62,6 @@ class CallString {
         }
 
         inline bool reachedMoreThanOnce(const Function *F) const {
-            assert(!isCyclic());
             bool foundCall = false;
             const CallInst *Last = nullptr;
             for (const Instruction *I : nonCyclic) {
