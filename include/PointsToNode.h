@@ -282,8 +282,6 @@ class NoAliasPointsToNode : public PointsToNode {
             if (summaryNode)
                 return true;
 
-            // FIXME: This returns true iff the call string contains more than
-            // one call to Definer; is this the correct condition here?
             if (CS.reachedMoreThanOnce(Definer))
                 return true;
 
